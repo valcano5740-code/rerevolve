@@ -109,6 +109,58 @@ export class TokenService {
         return null;
     }
 
+    /**
+     * antigravityUnifiedStateSync.oauthToken에서 refresh token 추출
+     * (현재 로그인 계정의 토큰 - jetskiStateSync보다 신뢰할 수 있음)
+     */
+    private async getRefreshToken(): Promise<string | null> {
+        const dbPath = this.getStateDbPath();
+        if (!fs.existsSync(dbPath)) {
+            return null;
+        }
+
+        try {
+            const SQL = await getSqlJs();
+            const fileBuffer = fs.readFileSync(dbPath);
+            let db: Database | null = null;
+
+            try {
+                db = new SQL.Database(fileBuffer);
+                const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
+                stmt.bind(['antigravityUnifiedStateSync.oauthToken']);
+
+                if (stmt.step()) {
+                    const row = stmt.get();
+                    stmt.free();
+                    if (row && row[0]) {
+                        const base64Value = String(row[0]).trim();
+                        const raw = Buffer.from(base64Value, 'base64');
+                        
+                        // Protobuf에서 refresh token 추출 (field 3)
+                        const oauthField = this.findField(raw, 1); // oauthTokenInfo는 field 1
+                        if (oauthField) {
+                            const tokenInfo = this.parseOAuthTokenInfo(oauthField);
+                            if (tokenInfo.refreshToken) {
+                                console.log(`ReRevolve: Refresh token from oauthToken: ${tokenInfo.refreshToken.substring(0, 15)}...`);
+                                return tokenInfo.refreshToken;
+                            }
+                        }
+                    }
+                } else {
+                    stmt.free();
+                }
+            } finally {
+                if (db) {
+                    db.close();
+                }
+            }
+        } catch (err) {
+            console.error('ReRevolve: Failed to read refresh token', err);
+        }
+
+        return null;
+    }
+
     // ========== Protobuf 파싱 함수들 (Cockpit 방식) ==========
     
     /**
@@ -486,11 +538,10 @@ export class TokenService {
                 return false;
             }
 
-            // 2. Refresh token은 Protobuf에서 시도 (없을 수 있음)
+            // 2. Refresh token은 oauthToken에서 추출 (현재 계정의 토큰)
             let refreshToken: string | undefined;
             try {
-                const protobufTokens = await this.extractTokensWithProtobuf();
-                refreshToken = protobufTokens?.refreshToken;
+                refreshToken = await this.getRefreshToken() || undefined;
             } catch {
                 console.log('ReRevolve: Refresh token extraction failed, continuing without it');
             }

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.3] - 2026-02-05 🔧 Refresh Token Source Fix
+
+### Fixed
+- 🔧 **Refresh Token도 신뢰할 수 있는 소스로 변경**
+  - 이전: `jetskiStateSync.agentManagerInitState` (이전 계정 토큰 가능성)
+  - 이후: `antigravityUnifiedStateSync.oauthToken` (현재 계정 토큰)
+  - Access Token + Refresh Token 모두 현재 로그인 계정에서 추출
+
+---
+
 ## [6.3.2] - 2026-02-05 🔧 Token Source Fix
 
 ### Fixed
