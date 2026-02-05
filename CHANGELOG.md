@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.2.0] - 2026-02-05 🔗 Token + Snapshot Integration
+
+### Changed
+- 🔗 **토큰 캡처 + 스냅샷 저장 통합**
+  - 토큰 캡처 버튼 클릭 시 스냅샷도 자동 저장
+  - 한 번의 클릭으로 쿼터 조회 + 계정 전환 모두 준비 완료
+
+---
+
 ## [6.1.0] - 2026-02-05 🔐 SecretStorage Migration
 
 ### Changed

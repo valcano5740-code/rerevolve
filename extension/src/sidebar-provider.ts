@@ -88,6 +88,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'captureToken':
                     await this.tokenService.captureCurrentToken(message.email);
+                    // 토큰 캡처 시 스냅샷도 함께 저장
+                    if (this.accountSwitcher) {
+                        await this.accountSwitcher.saveSnapshot();
+                    }
                     this.refresh();
                     break;
                 case 'addAccount':
