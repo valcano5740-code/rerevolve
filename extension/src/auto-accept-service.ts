@@ -27,7 +27,7 @@ const DANGEROUS_PATTERNS = [
 
 // Accept 버튼 텍스트 패턴
 const ACCEPT_PATTERNS = ['accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow'];
-const REJECT_PATTERNS = ['skip', 'reject', 'cancel', 'close', 'refine'];
+const REJECT_PATTERNS = ['skip', 'reject', 'cancel', 'close', 'refine', 'auto-accept', 'rerevolve', 'quota'];
 
 interface CDPPage {
     id: string;
@@ -374,7 +374,9 @@ Write-Output 'OK'
                 }
                 
                 let clicked = 0;
-                const buttons = document.querySelectorAll('button, [class*="button"]');
+                // 더 넓은 선택자: 버튼, 클릭 가능한 요소들
+                const selectors = 'button, [class*="button"], [class*="btn"], [role="button"], a[class*="action"], div[class*="action"], span[class*="action"]';
+                const buttons = document.querySelectorAll(selectors);
                 buttons.forEach(btn => {
                     if (isAcceptButton(btn)) {
                         btn.dispatchEvent(new MouseEvent('click', { 

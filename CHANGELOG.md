@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.6] - 2026-02-05 🔘 Auto Accept Button Fix
+
+### Fixed
+- 🔘 **버튼 선택자 확장**
+  - `[class*="btn"]`, `[role="button"]`, `[class*="action"]` 추가
+  - "Accept all" 등 더 많은 버튼 감지
+- 🛡️ **자체 버튼 클릭 방지**
+  - REJECT_PATTERNS에 `auto-accept`, `rerevolve`, `quota` 추가
+  - 하단 상태바 버튼이 클릭되지 않도록 수정
+
+---
+
 ## [6.3.5] - 2026-02-05 🔍 Debug JSON Export
 
 ### Added
