@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.4] - 2026-02-05 🎯 Token Save Target Fix
+
+### Changed
+- 🎯 **토큰 저장 대상 수정**
+  - 이전: 현재 로그인 계정으로 자동 저장 (버그 유발)
+  - 이후: 클릭한 계정에 저장, 불일치 시 경고만 표시
+  - 사용자가 의도한 계정에 정확히 저장됨
+
+---
+
 ## [6.3.3] - 2026-02-05 🔧 Refresh Token Source Fix
 
 ### Fixed
