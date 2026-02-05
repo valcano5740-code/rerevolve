@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.0] - 2026-02-05 🔄 One-Click Account Switch
+
+### Added
+- 🔄 **계정 전환 버튼 추가**
+  - 계정 카드 드롭다운 메뉴에 "🔄 계정 전환" 버튼
+  - 원클릭으로 해당 계정으로 전환 (스냅샷 기반)
+
+---
+
 ## [6.2.0] - 2026-02-05 🔗 Token + Snapshot Integration
 
 ### Changed

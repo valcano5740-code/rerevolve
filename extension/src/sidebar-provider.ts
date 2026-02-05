@@ -236,7 +236,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'getSnapshots':
                     if (this.accountSwitcher) {
-                        const snapshots = this.accountSwitcher.getSnapshots();
+                        const snapshots = await this.accountSwitcher.getSnapshots();
                         this._view?.webview.postMessage({
                             command: 'snapshotList',
                             snapshots: Object.keys(snapshots)
@@ -1511,6 +1511,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                                     <button class="icon-btn dropdown-toggle" onclick="toggleDropdown(event, '\${account.email}')">⋮</button>
                                     <div class="dropdown-menu" id="dropdown-\${account.email.replace(/[@.]/g, '_')}">
                                         <button onclick="captureToken('\${account.email}')">🔑 토큰 캡처</button>
+                                        <button onclick="switchToAccount('\${account.email}')">🔄 계정 전환</button>
                                         <button onclick="editAccountName('\${account.email}')">✏️ 이름 수정</button>
                                         <button onclick="removeAccount('\${account.email}')" class="danger">🗑️ 삭제</button>
                                     </div>
@@ -1551,6 +1552,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         function captureToken(email) {
             vscode.postMessage({ command: 'captureToken', email });
+        }
+
+        function switchToAccount(email) {
+            vscode.postMessage({ command: 'switchAccount', email });
         }
 
         function addAccount() {
