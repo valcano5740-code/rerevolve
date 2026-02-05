@@ -192,7 +192,7 @@ export function activate(context: vscode.ExtensionContext) {
     // 계정 전환 명령어
     context.subscriptions.push(
         vscode.commands.registerCommand('rerevolve.switchAccount', async () => {
-            const snapshots = accountSwitcher.getSnapshots();
+            const snapshots = await accountSwitcher.getSnapshots();
             const emails = Object.keys(snapshots);
             if (emails.length === 0) {
                 vscode.window.showWarningMessage('저장된 스냅샷이 없습니다. 먼저 스냅샷을 저장하세요.');

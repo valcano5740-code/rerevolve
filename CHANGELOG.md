@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.1.0] - 2026-02-05 🔐 SecretStorage Migration
+
+### Changed
+- 🔒 **스냅샷 저장소를 SecretStorage로 이전**
+  - JSON 파일 대신 VSCode SecretStorage 사용 (암호화됨)
+  - Windows Credential Manager / macOS Keychain / Linux libsecret
+- 기존 `rerevolve-snapshots.json` 파일은 더 이상 사용하지 않음
+
+### Security
+- 인증 정보가 OS 자격 증명 보관소에 안전하게 저장됨
+- 파일 시스템에 평문으로 저장되지 않음
+
+---
+
+## [6.0.0] - 2026-02-04 🔄 Account Switcher
+
+### Added
+- 🔄 **계정 전환 기능** (Account Switcher)
+  - `ReRevolve: 현재 계정 스냅샷 저장` - 현재 로그인된 계정 저장
+  - `ReRevolve: 계정 전환` - 저장된 계정으로 원클릭 전환
+- 스냅샷 기반 계정 관리: antigravityAuthStatus 전체 저장/복원
+- GitHub 저장소 연동 (버전 관리)
+
+### Technical
+- `account-switcher.ts` 신규 추가
+- sqlite3 CLI를 통한 state.vscdb 읽기/쓰기
+
+---
+
 ## [0.5.0] - 2026-02-03 🎛️ UI Redesign & Utilities
 
 ### Added

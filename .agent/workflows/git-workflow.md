@@ -35,3 +35,14 @@
 - [ ] 스냅샷 SecretStorage 이전
 - [ ] 토큰 캡처 + 스냅샷 통합
 - [ ] UI 개선
+
+---
+
+## 릴리스 스크립트 (AI용)
+버전 업데이트 시 다음 단계 수행:
+1. `package.json`의 version 필드 업데이트
+2. `CHANGELOG.md` 업데이트
+3. `git add . && git commit -m "[release] vX.X.X"`
+4. `git tag vX.X.X`
+5. `git push origin master --tags`
+6. `npx vsce package` 실행
