@@ -65,6 +65,50 @@ export class TokenService {
         return path.join(homeDir, '.config', 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
     }
 
+    /**
+     * antigravityAuthStatus에서 현재 계정 정보 읽기 (가장 신뢰할 수 있음)
+     */
+    private async getAuthStatus(): Promise<{ email?: string; apiKey?: string } | null> {
+        const dbPath = this.getStateDbPath();
+        if (!fs.existsSync(dbPath)) {
+            return null;
+        }
+
+        try {
+            const SQL = await getSqlJs();
+            const fileBuffer = fs.readFileSync(dbPath);
+            let db: Database | null = null;
+
+            try {
+                db = new SQL.Database(fileBuffer);
+                const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
+                stmt.bind(['antigravityAuthStatus']);
+
+                if (stmt.step()) {
+                    const row = stmt.get();
+                    stmt.free();
+                    if (row && row[0]) {
+                        const json = JSON.parse(String(row[0]));
+                        return {
+                            email: json.email,
+                            apiKey: json.apiKey
+                        };
+                    }
+                } else {
+                    stmt.free();
+                }
+            } finally {
+                if (db) {
+                    db.close();
+                }
+            }
+        } catch (err) {
+            console.error('ReRevolve: Failed to read authStatus', err);
+        }
+
+        return null;
+    }
+
     // ========== Protobuf 파싱 함수들 (Cockpit 방식) ==========
     
     /**
@@ -426,52 +470,53 @@ export class TokenService {
      */
     async captureCurrentToken(email: string): Promise<boolean> {
         try {
-            // 1. 현재 로그인 이메일 확인 (필수!)
-            const currentEmail = await this.getCurrentLoggedInEmail();
+            // 1. antigravityAuthStatus에서 현재 계정 정보 직접 추출 (가장 신뢰할 수 있음)
+            const authStatus = await this.getAuthStatus();
             
-            if (!currentEmail) {
+            if (!authStatus) {
                 vscode.window.showErrorMessage('ReRevolve: 현재 로그인된 계정을 감지할 수 없습니다. Antigravity에 로그인되어 있는지 확인하세요.');
                 return false;
             }
 
-            // 2. Protobuf 방식 우선 시도 (Cockpit 방식)
-            let tokens = await this.extractTokensWithProtobuf();
-            
-            // 3. Protobuf 실패 시 정규식 방식으로 폴백
-            if (!tokens?.accessToken) {
-                console.log('ReRevolve: Protobuf extraction failed, trying regex fallback...');
-                tokens = await this.extractTokensFromDb();
-            }
-            
-            if (!tokens?.accessToken) {
-                vscode.window.showErrorMessage('ReRevolve: 토큰을 추출할 수 없습니다. Antigravity에 로그인되어 있는지 확인하세요.');
+            const currentEmail = authStatus.email?.toLowerCase();
+            const accessToken = authStatus.apiKey;
+
+            if (!currentEmail || !accessToken) {
+                vscode.window.showErrorMessage('ReRevolve: 현재 로그인 정보를 읽을 수 없습니다.');
                 return false;
             }
 
-            // 4. 현재 로그인 계정으로 저장 (파라미터 email 무시!)
-            const targetEmail = currentEmail.toLowerCase();
-            
-            if (email.toLowerCase() !== targetEmail) {
+            // 2. Refresh token은 Protobuf에서 시도 (없을 수 있음)
+            let refreshToken: string | undefined;
+            try {
+                const protobufTokens = await this.extractTokensWithProtobuf();
+                refreshToken = protobufTokens?.refreshToken;
+            } catch {
+                console.log('ReRevolve: Refresh token extraction failed, continuing without it');
+            }
+
+            // 3. 현재 로그인 계정으로 저장
+            if (email.toLowerCase() !== currentEmail) {
                 vscode.window.showWarningMessage(
-                    `⚠️ 현재 로그인된 계정은 ${targetEmail}입니다. ` +
-                    `${email} 대신 ${targetEmail}로 토큰이 저장됩니다.`
+                    `⚠️ 현재 로그인된 계정은 ${currentEmail}입니다. ` +
+                    `${email} 대신 ${currentEmail}로 토큰이 저장됩니다.`
                 );
             }
 
             const credential: StoredCredential = {
-                accessToken: tokens.accessToken,
-                refreshToken: tokens.refreshToken, // 리프레시 토큰 저장!
+                accessToken,
+                refreshToken,
                 expiresAt: Date.now() + 55 * 60 * 1000, // 55분 후 만료
-                email: targetEmail,
+                email: currentEmail,
                 createdAt: Date.now()
             };
 
-            await this.secrets.store(TOKEN_PREFIX + targetEmail, JSON.stringify(credential));
+            await this.secrets.store(TOKEN_PREFIX + currentEmail, JSON.stringify(credential));
             
-            const hasRefresh = tokens.refreshToken ? ' (리프레시 토큰 포함 🔄)' : ' (액세스 토큰만)';
-            console.log(`ReRevolve: Token captured for ${targetEmail}${hasRefresh}`);
+            const hasRefresh = refreshToken ? ' (리프레시 토큰 포함 🔄)' : ' (액세스 토큰만)';
+            console.log(`ReRevolve: Token captured for ${currentEmail}${hasRefresh}`);
             
-            vscode.window.showInformationMessage(`ReRevolve: ${targetEmail} 토큰 캡처 완료!${hasRefresh}`);
+            vscode.window.showInformationMessage(`ReRevolve: ${currentEmail} 토큰 캡처 완료!${hasRefresh}`);
             return true;
         } catch (err) {
             console.error('ReRevolve: Token capture failed', err);
