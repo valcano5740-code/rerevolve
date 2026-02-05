@@ -1,0 +1,112 @@
+{
+  "name": "rerevolve-quota-manager",
+  "displayName": "ReRevolve Quota Manager",
+  "description": "Antigravity 다중 계정 Claude 쿼터 관리 확장프로그램",
+  "version": "6.0.0",
+  "publisher": "rerevolve",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "icon": "assets/icon.png",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "rerevolve-sidebar",
+          "title": "ReRevolve",
+          "icon": "assets/sidebar-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "rerevolve-sidebar": [
+        {
+          "type": "webview",
+          "id": "rerevolve.quotaPanel",
+          "name": "Quota Dashboard"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "rerevolve.refreshAll",
+        "title": "ReRevolve: 전체 새로고침",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "rerevolve.addAccount",
+        "title": "ReRevolve: 계정 추가",
+        "icon": "$(add)"
+      },
+      {
+        "command": "rerevolve.captureToken",
+        "title": "ReRevolve: 현재 계정 토큰 캡처"
+      },
+      {
+        "command": "rerevolve.reloadAntigravity",
+        "title": "ReRevolve: Antigravity 재시작",
+        "icon": "$(zap)"
+      },
+      {
+        "command": "rerevolve.toggleAutoAccept",
+        "title": "ReRevolve: Auto-Accept 토글",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "rerevolve.saveSnapshot",
+        "title": "ReRevolve: 현재 계정 스냅샷 저장"
+      },
+      {
+        "command": "rerevolve.switchAccount",
+        "title": "ReRevolve: 계정 전환"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "rerevolve.toggleAutoAccept",
+        "key": "ctrl+alt+shift+a",
+        "mac": "cmd+alt+shift+a"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "rerevolve.refreshAll",
+          "when": "view == rerevolve.quotaPanel",
+          "group": "navigation@1"
+        },
+        {
+          "command": "rerevolve.reloadAntigravity",
+          "when": "view == rerevolve.quotaPanel",
+          "group": "navigation@2"
+        },
+        {
+          "command": "rerevolve.addAccount",
+          "when": "view == rerevolve.quotaPanel",
+          "group": "navigation@3"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/sql.js": "^1.4.9",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "sql.js": "^1.13.0"
+  }
+}

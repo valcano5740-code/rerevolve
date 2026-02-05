@@ -1,0 +1,702 @@
+{
+  "version": "0.1.9",
+  "exportDate": "2026-01-30T08:36:13.631Z",
+  "accounts": [
+    {
+      "email": "valcano0002@gmail.com",
+      "name": "valcano0002",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": true,
+      "refreshLocked": false,
+      "createdAt": "2026-01-30T06:29:29.406Z",
+      "lastUpdated": "2026-01-30T08:14:01.698Z"
+    },
+    {
+      "email": "valcano5740@gmail.com",
+      "name": "valcano5740",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-01-30T05:35:29.524Z",
+      "lastUpdated": "2026-01-30T07:56:40.113Z"
+    },
+    {
+      "email": "valcjapan@gmail.com",
+      "name": "valcjapan",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:31:49.429Z",
+      "lastUpdated": "2026-01-30T07:50:20.577Z"
+    },
+    {
+      "email": "valcano0013@gmail.com",
+      "name": "valcano0013",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:40:42.406Z",
+      "lastUpdated": "2026-01-30T07:50:21.036Z"
+    },
+    {
+      "email": "valcano0014@gmail.com",
+      "name": "valcano0014",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:34:38.773Z",
+      "lastUpdated": "2026-01-30T07:50:21.443Z"
+    },
+    {
+      "email": "valcano0001@gmail.com",
+      "name": "valcano0001",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-01-30T06:30:24.739Z",
+      "lastUpdated": "2026-01-30T08:13:28.177Z"
+    },
+    {
+      "email": "valcano0006@gmail.com",
+      "name": "valcano0006",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-01-30T06:25:42.535Z",
+      "lastUpdated": "2026-01-30T07:56:23.613Z"
+    },
+    {
+      "email": "valcano0007@gmail.com",
+      "name": "valcano0007",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:24:47.233Z",
+      "lastUpdated": "2026-01-30T06:24:53.163Z"
+    },
+    {
+      "email": "valcano0004@gmail.com",
+      "name": "valcano0004",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:28:13.213Z",
+      "lastUpdated": "2026-01-30T07:50:23.980Z"
+    },
+    {
+      "email": "valcano0005@gmail.com",
+      "name": "valcano0005",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:27:34.887Z",
+      "lastUpdated": "2026-01-30T07:50:24.386Z"
+    },
+    {
+      "email": "valcano0003@gmail.com",
+      "name": "valcano0003",
+      "tier": "free",
+      "isPaid": false,
+      "isActive": false,
+      "refreshLocked": true,
+      "createdAt": "2026-01-30T06:28:48.832Z",
+      "lastUpdated": "2026-01-30T07:50:24.835Z"
+    }
+  ],
+  "tokens": {
+    "valcano0002@gmail.com": "ya29.a0AUMWg_JXQ0G1u7V92yKY8dgbswz-O9eEZ-s3gyg7EbsywR8pGR6YRAOR5C0WrW1SDya_kwNnM79oAAL_DZU4ZPO_Bv1alZuupaB9vrzWrHwxKb6yR_MoytRlmNoGBCxU9UEH2LwpA6gJXBO4ka0aXqx4jdXqLPJsa74O5HbyA6EpNHOkfpQs6_8xiWkGwjSWLLJXjaY5bVSsaCgYKAQcSARQSFQHGX2MiA0sdpDq4jmWBGmJpCswiVQ0211",
+    "valcano5740@gmail.com": "ya29.a0AUMWg_KTdoFZA2WCOLIXGo88v88rQ4rIkJ_9pmzRpLkuTSdHIlvpYUUE9_3kUigHupHmHgLXhLFEPdZ5l8-RmEZpfhic5yyzBUXgaJpSsniVzpxyr9-thKqVB_M3QJPS-GeE6Yoiujo58muFjHQHSsWEPUlYzoLF15NLySlGffU5-u5Hrdj8qi7Luyc_C8UOMW9OvdJR0d27aCgYKAdYSARUSFQHGX2MiSs31WFfgHkOwcbNna2Ho4w0211",
+    "valcjapan@gmail.com": "ya29.a0AUMWg_LxFqTjuo1Z6PFLqDBrtXVO8ErebyMs_nBDw6tQMbQs1YICn5203hkYdi954kmdk-UdP_7cWlxZGkq_An7r311dyj0A3pB_0nPmO1LpZWuNVSzdED1h_2x4gagVjInxlazRbwsy1Ovc2jTMNkaBdB22SlS2Uz1h4oOrIqUMc2XNLB5f5dqfERsxmgbJgcsCwG2fJ5MIaCgYKAcsSARMSFQHGX2Mi53YiDb8tfWH9B1KwudpkmQ0211",
+    "valcano0013@gmail.com": "ya29.a0AUMWg_LuywKuUpC64eezVdEAq5p7nqgoQpUA8I6w7s4JQIRv2n8ujFyVJZqQQX-febUgSSf2UJIymLm9YXDx-f1DRQHCVDpR02UkTVAUIg7ih19PogW5b_EU3u5XHYJu7B3p1wstjCve1FOHpg5kE0U5ri7GoK8tPs1tRul3s1fVlaD-sDkNdBDdWN4ejLfFBsQWGy1zEqqhaCgYKAcISARMSFQHGX2MitURCzjZ-KgVW-pvU2cwCLQ0211",
+    "valcano0014@gmail.com": "ya29.a0AUMWg_I56OZQmm_hPsA9B7X8PSIurcBcyXRtghpmMESB3iwjbXYP5Vnq4XpC2SN4RE4iLHGxeI5adK9a40wc4h2B885KOmUAE4AWrD8TNLMLPTe_q6PHyZFsVWQTaxl_KkCaKcafNkQgd7lJsUJFfNrFOXihPHQNnAzBDfFfBlDQA4rzLsoRQ8CaPACrrG6yJh7nOwQFBaPPaCgYKAWkSARUSFQHGX2MiZqvXxGihDo7oVQCldM2KVw0211",
+    "valcano0001@gmail.com": "ya29.a0AUMWg_KiCXUSBc51s5TJwTn2Tq9YDgAbU6-wIfyYmh_M2QOMvgaKg3RD9HiVRnpdU_cbR0zlE2RmrcBHG97zWROmo4YBRhtAmPcgv9MG-qJZtKEUKWmnHm4C8B4s4IUb8sS3DpsNMjbTkHTgAeTYj3DZX9OBI2V7EYT8NlsvbnjRVw790ytv13sKhntg0WWoA-v0i1RIdG4aaCgYKAd0SARQSFQHGX2Mi7geWUkcYqjik0L1nHIHIYg0211",
+    "valcano0006@gmail.com": "ya29.a0AUMWg_JW5CqAHEVwoWpAPAouWQako7YM1gbPW6qgJAdZfU4nT4lPnk4QzlNJb90AttU4qSU2IEF-nH_n77ev8hPJz5KEqJuTC4lpFlRLsUaFsRekpySjE4C4P7v2XD8CNqgpnjdnIbUT28KJroRLdtuSATvVTQyJohyIePTN-8M6EIhVNovcVpsbv3qn4rJtQYiZkakObWviaCgYKATcSARESFQHGX2Mif0yyJeTNHXmujMlwLrBfFQ0211",
+    "valcano0007@gmail.com": "ya29.a0AUMWg_KPvBjQQVqFlLeQVoQ_JGZVl7n3G8gxZz01Odbx03A935FI1gpYy-CkNph46boIndQheUeawSH59szrv5XwK28TwZR3xuqFY0bYhuXhSgqnvouYG0bDO8kmZbfU_fSUYxDCzzmRuDbGh6NG0lDA_0XqSlqthTadZ_zdmpg55ZHNTD3LSGTZWzXYJjv6qXX3Wfls59apaCgYKAWUSARESFQHGX2Miul0kPHfLDoGiPmKYkgouBw0211",
+    "valcano0004@gmail.com": "ya29.a0AUMWg_KWj2l3i3YDkWmTSP3qecP2SYUTs2r9aBBlupm6PK-7EEIRZqtDy190GWpBm2WCJjzFdVm89kPOPhMfgO1d54H6vTXIoNsY62gO1-aTb4rr-rrC1XfJY5bhBMjZ1_a7YHxojJ5rF5a5lGW5Y4ewtSdxaen7KNLNeJTQHBaoOMrPI5JFoo8u8Y530MtMYagg_yODM0T2aCgYKAaoSARYSFQHGX2MiPOIPJPLH80PxUrdNQCT42Q0211",
+    "valcano0005@gmail.com": "ya29.a0AUMWg_KIgKkBDsKrDtjXKi_WtUd7K_11C36FXuFN15xrkDJQUUAwjaMRjKtvIb-4gqVH_FRDAL4BrDI-6v6D3xu9Lc1LzyHI_B6pWvkEdGM2RUg9nHw8HEW5G-O74s2CecuBT1RakicdF5kIGfXEFzA_qK_5yUKNVz4wyR2U_Gwm8itD3V4Ann_P-JFC7i5ocqWiydO0N25maCgYKAbISARMSFQHGX2Mi6XYS9cWtCizq-8IjocFcgQ0211",
+    "valcano0003@gmail.com": "ya29.a0AUMWg_KLMOF1NpZKQGX2GLEgE49vppwX-XQZSLEnhQlfjOYTFJ6SeE3Hr0HOs-oMTHQb90rbGvq8zzkn0biGGPHYHwdsAxVyQM_qaK5IbEkSKHE-GX1Rbk5eLwZ4qxZbh0d7ONWwpEKC5cqntKseinw0nYxY8dSp8Jg8UBgz6T6v0AF14Es9pOHF1FmAuWKuJgiKdXBWegQqaCgYKAekSARUSFQHGX2Mi4Wm0RTVRAsOWiMRAS--29w0211"
+  },
+  "quotaCache": {
+    "valcano5740@gmail.com": {
+      "email": "valcano5740@gmail.com",
+      "isPaidAccount": true,
+      "claudeRemaining": 0,
+      "claudeResetTime": "4일 2시간",
+      "geminiProRemaining": 100,
+      "geminiFlashRemaining": 100,
+      "models": [
+        {
+          "displayName": "Gemini 2.5 Flash",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "GPT-OSS 120B (Medium)",
+          "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+          "remainingPercentage": 0,
+          "resetTime": "2026-02-03T11:03:59Z"
+        },
+        {
+          "displayName": "chat_23310",
+          "model": "MODEL_CHAT_23310",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "tab_flash_lite_preview",
+          "model": "MODEL_PLACEHOLDER_M19",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (High)",
+          "model": "MODEL_PLACEHOLDER_M8",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Gemini 3 Flash",
+          "model": "MODEL_PLACEHOLDER_M18",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Pro",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_PRO",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash (Thinking)",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5 (Thinking)",
+          "model": "MODEL_CLAUDE_4_5_SONNET_THINKING",
+          "remainingPercentage": 0,
+          "resetTime": "2026-02-03T11:03:59Z"
+        },
+        {
+          "displayName": "Claude Opus 4.5 (Thinking)",
+          "model": "MODEL_PLACEHOLDER_M12",
+          "remainingPercentage": 0,
+          "resetTime": "2026-02-03T11:03:59Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro Image",
+          "model": "MODEL_PLACEHOLDER_M9",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5",
+          "model": "MODEL_CLAUDE_4_5_SONNET",
+          "remainingPercentage": 0,
+          "resetTime": "2026-02-03T11:03:59Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (Low)",
+          "model": "MODEL_PLACEHOLDER_M7",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash Lite",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:43Z"
+        },
+        {
+          "displayName": "chat_20706",
+          "model": "MODEL_CHAT_20706",
+          "remainingPercentage": 100,
+          "resetTime": null
+        }
+      ],
+      "lastUpdated": "2026-01-30T08:35:44.274Z"
+    },
+    "valcano0007@gmail.com": {
+      "email": "valcano0007@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": 100,
+      "claudeResetTime": "7일 0시간",
+      "geminiProRemaining": 100,
+      "geminiFlashRemaining": 100,
+      "models": [
+        {
+          "displayName": "Gemini 2.5 Pro",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_PRO",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T11:24:53Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T11:24:53Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash Lite",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T11:24:53Z"
+        },
+        {
+          "displayName": "chat_20706",
+          "model": "MODEL_CHAT_20706",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Gemini 3 Pro (High)",
+          "model": "MODEL_PLACEHOLDER_M8",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro Image",
+          "model": "MODEL_PLACEHOLDER_M9",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (Low)",
+          "model": "MODEL_PLACEHOLDER_M7",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "Claude Opus 4.5 (Thinking)",
+          "model": "MODEL_PLACEHOLDER_M12",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "tab_flash_lite_preview",
+          "model": "MODEL_PLACEHOLDER_M19",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T11:24:53Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5",
+          "model": "MODEL_CLAUDE_4_5_SONNET",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash (Thinking)",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T11:24:53Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5 (Thinking)",
+          "model": "MODEL_CLAUDE_4_5_SONNET_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "chat_23310",
+          "model": "MODEL_CHAT_23310",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Gemini 3 Flash",
+          "model": "MODEL_PLACEHOLDER_M18",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        },
+        {
+          "displayName": "GPT-OSS 120B (Medium)",
+          "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+          "remainingPercentage": 100,
+          "resetTime": "2026-02-06T06:24:53Z"
+        }
+      ],
+      "lastUpdated": "2026-01-30T06:24:53.163Z"
+    },
+    "valcano0006@gmail.com": {
+      "email": "valcano0006@gmail.com",
+      "isPaidAccount": true,
+      "claudeRemaining": 100,
+      "claudeResetTime": "4시간 17분",
+      "geminiProRemaining": 100,
+      "geminiFlashRemaining": 100,
+      "models": [
+        {
+          "displayName": "Gemini 3 Pro Image",
+          "model": "MODEL_PLACEHOLDER_M9",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash Lite",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T12:54:20Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5 (Thinking)",
+          "model": "MODEL_CLAUDE_4_5_SONNET_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T12:52:36Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash (Thinking)",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "chat_20706",
+          "model": "MODEL_CHAT_20706",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "chat_23310",
+          "model": "MODEL_CHAT_23310",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Claude Sonnet 4.5",
+          "model": "MODEL_CLAUDE_4_5_SONNET",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T12:52:36Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (High)",
+          "model": "MODEL_PLACEHOLDER_M8",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (Low)",
+          "model": "MODEL_PLACEHOLDER_M7",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Pro",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_PRO",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "Gemini 3 Flash",
+          "model": "MODEL_PLACEHOLDER_M18",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        },
+        {
+          "displayName": "Claude Opus 4.5 (Thinking)",
+          "model": "MODEL_PLACEHOLDER_M12",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T12:52:36Z"
+        },
+        {
+          "displayName": "GPT-OSS 120B (Medium)",
+          "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T12:52:36Z"
+        },
+        {
+          "displayName": "tab_flash_lite_preview",
+          "model": "MODEL_PLACEHOLDER_M19",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:47Z"
+        }
+      ],
+      "lastUpdated": "2026-01-30T08:35:47.657Z"
+    },
+    "valcano0005@gmail.com": {
+      "email": "valcano0005@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": -1,
+      "claudeResetTime": null,
+      "geminiProRemaining": -1,
+      "geminiFlashRemaining": -1,
+      "models": [],
+      "lastUpdated": "2026-01-30T07:50:24.385Z",
+      "error": "토큰 만료됨"
+    },
+    "valcano0004@gmail.com": {
+      "email": "valcano0004@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": -1,
+      "claudeResetTime": null,
+      "geminiProRemaining": -1,
+      "geminiFlashRemaining": -1,
+      "models": [],
+      "lastUpdated": "2026-01-30T07:50:23.979Z",
+      "error": "토큰 만료됨"
+    },
+    "valcano0003@gmail.com": {
+      "email": "valcano0003@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": -1,
+      "claudeResetTime": null,
+      "geminiProRemaining": -1,
+      "geminiFlashRemaining": -1,
+      "models": [],
+      "lastUpdated": "2026-01-30T07:50:24.835Z",
+      "error": "토큰 만료됨"
+    },
+    "valcano0002@gmail.com": {
+      "email": "valcano0002@gmail.com",
+      "isPaidAccount": true,
+      "claudeRemaining": 80,
+      "claudeResetTime": "4시간 38분",
+      "geminiProRemaining": 100,
+      "geminiFlashRemaining": 100,
+      "models": [
+        {
+          "displayName": "tab_flash_lite_preview",
+          "model": "MODEL_PLACEHOLDER_M19",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (Low)",
+          "model": "MODEL_PLACEHOLDER_M7",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "chat_23310",
+          "model": "MODEL_CHAT_23310",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Gemini 2.5 Flash (Thinking)",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "Claude Opus 4.5 (Thinking)",
+          "model": "MODEL_PLACEHOLDER_M12",
+          "remainingPercentage": 80,
+          "resetTime": "2026-01-30T13:13:56Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5 (Thinking)",
+          "model": "MODEL_CLAUDE_4_5_SONNET_THINKING",
+          "remainingPercentage": 80,
+          "resetTime": "2026-01-30T13:13:56Z"
+        },
+        {
+          "displayName": "chat_20706",
+          "model": "MODEL_CHAT_20706",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Gemini 3 Flash",
+          "model": "MODEL_PLACEHOLDER_M18",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro Image",
+          "model": "MODEL_PLACEHOLDER_M9",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5",
+          "model": "MODEL_CLAUDE_4_5_SONNET",
+          "remainingPercentage": 80,
+          "resetTime": "2026-01-30T13:13:56Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Pro",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_PRO",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (High)",
+          "model": "MODEL_PLACEHOLDER_M8",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:36:09Z"
+        },
+        {
+          "displayName": "GPT-OSS 120B (Medium)",
+          "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+          "remainingPercentage": 80,
+          "resetTime": "2026-01-30T13:13:56Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash Lite",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:23:49Z"
+        }
+      ],
+      "lastUpdated": "2026-01-30T08:36:10.249Z"
+    },
+    "valcano0001@gmail.com": {
+      "email": "valcano0001@gmail.com",
+      "isPaidAccount": true,
+      "claudeRemaining": 0,
+      "claudeResetTime": "3시간 13분",
+      "geminiProRemaining": 100,
+      "geminiFlashRemaining": 100,
+      "models": [
+        {
+          "displayName": "Claude Sonnet 4.5 (Thinking)",
+          "model": "MODEL_CLAUDE_4_5_SONNET_THINKING",
+          "remainingPercentage": 0,
+          "resetTime": "2026-01-30T11:48:38Z"
+        },
+        {
+          "displayName": "tab_flash_lite_preview",
+          "model": "MODEL_PLACEHOLDER_M19",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro Image",
+          "model": "MODEL_PLACEHOLDER_M9",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Pro",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_PRO",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash (Thinking)",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_THINKING",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Gemini 3 Flash",
+          "model": "MODEL_PLACEHOLDER_M18",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Gemini 3 Pro (Low)",
+          "model": "MODEL_PLACEHOLDER_M7",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "GPT-OSS 120B (Medium)",
+          "model": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+          "remainingPercentage": 0,
+          "resetTime": "2026-01-30T11:48:38Z"
+        },
+        {
+          "displayName": "Gemini 2.5 Flash Lite",
+          "model": "MODEL_GOOGLE_GEMINI_2_5_FLASH_LITE",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T12:01:26Z"
+        },
+        {
+          "displayName": "chat_23310",
+          "model": "MODEL_CHAT_23310",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Claude Opus 4.5 (Thinking)",
+          "model": "MODEL_PLACEHOLDER_M12",
+          "remainingPercentage": 0,
+          "resetTime": "2026-01-30T11:48:38Z"
+        },
+        {
+          "displayName": "chat_20706",
+          "model": "MODEL_CHAT_20706",
+          "remainingPercentage": 100,
+          "resetTime": null
+        },
+        {
+          "displayName": "Gemini 3 Pro (High)",
+          "model": "MODEL_PLACEHOLDER_M8",
+          "remainingPercentage": 100,
+          "resetTime": "2026-01-30T13:35:45Z"
+        },
+        {
+          "displayName": "Claude Sonnet 4.5",
+          "model": "MODEL_CLAUDE_4_5_SONNET",
+          "remainingPercentage": 0,
+          "resetTime": "2026-01-30T11:48:38Z"
+        }
+      ],
+      "lastUpdated": "2026-01-30T08:35:46.069Z"
+    },
+    "valcjapan@gmail.com": {
+      "email": "valcjapan@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": -1,
+      "claudeResetTime": null,
+      "geminiProRemaining": -1,
+      "geminiFlashRemaining": -1,
+      "models": [],
+      "lastUpdated": "2026-01-30T07:50:20.576Z",
+      "error": "토큰 만료됨"
+    },
+    "valcano0014@gmail.com": {
+      "email": "valcano0014@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": -1,
+      "claudeResetTime": null,
+      "geminiProRemaining": -1,
+      "geminiFlashRemaining": -1,
+      "models": [],
+      "lastUpdated": "2026-01-30T07:50:21.442Z",
+      "error": "토큰 만료됨"
+    },
+    "valcano0013@gmail.com": {
+      "email": "valcano0013@gmail.com",
+      "isPaidAccount": false,
+      "claudeRemaining": -1,
+      "claudeResetTime": null,
+      "geminiProRemaining": -1,
+      "geminiFlashRemaining": -1,
+      "models": [],
+      "lastUpdated": "2026-01-30T07:50:21.036Z",
+      "error": "토큰 만료됨"
+    }
+  }
+}

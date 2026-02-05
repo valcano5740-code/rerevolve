@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+extension/dist/
+extension/out/
+
+# Environment / Secrets
+.env
+extension/.env
+.credentials.json
+extension/.credentials.json
+
+# VSIX packages
+*.vsix
+
+# Test files
+test-*.ts
+test-*.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+*.code-workspace
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment
+.env
+.env.local
