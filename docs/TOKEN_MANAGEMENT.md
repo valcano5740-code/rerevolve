@@ -54,10 +54,12 @@ interface StoredCredential {
 
 ## 3. Refresh Token 추출
 
-### 3.1 현재 상태
-**문제**: "(액세스 토큰만)" 표시 - Refresh Token 추출 실패
+### 3.1 현재 구현 (v6.3.4)
+**우선순위**:
+1. `antigravityUnifiedStateSync.oauthToken`에서 추출 시도
+2. 실패 시 `jetskiStateSync.agentManagerInitState`에서 추출 (fallback)
 
-**해결 필요**
+**파일**: `token-service.ts` → `getRefreshToken()`, `extractTokensWithProtobuf()`
 
 ---
 

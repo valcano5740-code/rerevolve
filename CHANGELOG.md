@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.5] - 2026-02-05 🔍 Debug JSON Export
+
+### Added
+- 🔍 **디버그용 JSON 파일 저장**
+  - 토큰 캡처 시 `~/.rerevolve-debug/` 폴더에 JSON 파일 동시 저장
+  - 개발 중 토큰 확인용
+
+---
+
 ## [6.3.4] - 2026-02-05 🎯 Token Save Target Fix
 
 ### Changed

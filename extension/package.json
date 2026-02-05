@@ -2,7 +2,7 @@
   "name": "rerevolve-quota-manager",
   "displayName": "ReRevolve Quota Manager",
   "description": "Antigravity 다중 계정 Claude 쿼터 관리 확장프로그램",
-  "version": "6.3.4",
+  "version": "6.3.5",
   "publisher": "rerevolve",
   "engines": {
     "vscode": "^1.85.0"

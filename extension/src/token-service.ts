@@ -571,6 +571,19 @@ export class TokenService {
 
             await this.secrets.store(TOKEN_PREFIX + email.toLowerCase(), JSON.stringify(credential));
             
+            // 디버그용 JSON 파일 저장 (개발 중 확인용)
+            try {
+                const debugDir = path.join(os.homedir(), '.rerevolve-debug');
+                if (!fs.existsSync(debugDir)) {
+                    fs.mkdirSync(debugDir, { recursive: true });
+                }
+                const debugFile = path.join(debugDir, `${email.toLowerCase().replace('@', '_at_')}.json`);
+                fs.writeFileSync(debugFile, JSON.stringify(credential, null, 2));
+                console.log(`ReRevolve: Debug JSON saved to ${debugFile}`);
+            } catch (debugErr) {
+                console.log('ReRevolve: Debug JSON save failed (non-critical)', debugErr);
+            }
+
             const hasRefresh = refreshToken ? ' (리프레시 토큰 포함 🔄)' : ' (액세스 토큰만)';
             console.log(`ReRevolve: Token captured for ${email}${hasRefresh}`);
             
