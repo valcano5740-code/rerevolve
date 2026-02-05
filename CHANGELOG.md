@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.1] - 2026-02-05 🐛 Token Capture Bug Fix
+
+### Fixed
+- 🐛 **토큰 캡처가 잘못된 계정으로 저장되는 버그 수정**
+  - 이전: 클릭한 계정 카드의 email로 토큰 저장 (잘못됨)
+  - 이후: 현재 Antigravity에 로그인된 계정의 email로 토큰 저장
+  - 다른 계정으로 로그인되어 있으면 경고 메시지 표시
+
+---
+
 ## [6.3.0] - 2026-02-05 🔄 One-Click Account Switch
 
 ### Added

@@ -422,14 +422,22 @@ export class TokenService {
 
     /**
      * 현재 Antigravity 로그인 계정의 토큰 캡처 및 저장
-     * ⚠️ 주의: 현재 로그인 감지가 정확하지 않을 수 있음
+     * ⚠️ 중요: 파라미터 email이 아닌 현재 로그인된 계정의 email로 저장됨
      */
     async captureCurrentToken(email: string): Promise<boolean> {
         try {
-            // 1. Protobuf 방식 우선 시도 (Cockpit 방식)
+            // 1. 현재 로그인 이메일 확인 (필수!)
+            const currentEmail = await this.getCurrentLoggedInEmail();
+            
+            if (!currentEmail) {
+                vscode.window.showErrorMessage('ReRevolve: 현재 로그인된 계정을 감지할 수 없습니다. Antigravity에 로그인되어 있는지 확인하세요.');
+                return false;
+            }
+
+            // 2. Protobuf 방식 우선 시도 (Cockpit 방식)
             let tokens = await this.extractTokensWithProtobuf();
             
-            // 2. Protobuf 실패 시 정규식 방식으로 폴백
+            // 3. Protobuf 실패 시 정규식 방식으로 폴백
             if (!tokens?.accessToken) {
                 console.log('ReRevolve: Protobuf extraction failed, trying regex fallback...');
                 tokens = await this.extractTokensFromDb();
@@ -440,14 +448,13 @@ export class TokenService {
                 return false;
             }
 
-            // 2. 현재 로그인 이메일 확인 (참고용)
-            const currentEmail = await this.getCurrentLoggedInEmail();
+            // 4. 현재 로그인 계정으로 저장 (파라미터 email 무시!)
+            const targetEmail = currentEmail.toLowerCase();
             
-            if (currentEmail && currentEmail !== email.toLowerCase()) {
-                // 경고만 표시, 캡처는 진행
+            if (email.toLowerCase() !== targetEmail) {
                 vscode.window.showWarningMessage(
-                    `⚠️ 주의: 현재 로그인 감지 결과 ${currentEmail}이지만, 정확하지 않을 수 있습니다. ` +
-                    `${email}로 토큰이 저장됩니다. 해당 계정으로 로그인 상태인지 확인하세요.`
+                    `⚠️ 현재 로그인된 계정은 ${targetEmail}입니다. ` +
+                    `${email} 대신 ${targetEmail}로 토큰이 저장됩니다.`
                 );
             }
 
@@ -455,16 +462,16 @@ export class TokenService {
                 accessToken: tokens.accessToken,
                 refreshToken: tokens.refreshToken, // 리프레시 토큰 저장!
                 expiresAt: Date.now() + 55 * 60 * 1000, // 55분 후 만료
-                email,
+                email: targetEmail,
                 createdAt: Date.now()
             };
 
-            await this.secrets.store(TOKEN_PREFIX + email, JSON.stringify(credential));
+            await this.secrets.store(TOKEN_PREFIX + targetEmail, JSON.stringify(credential));
             
             const hasRefresh = tokens.refreshToken ? ' (리프레시 토큰 포함 🔄)' : ' (액세스 토큰만)';
-            console.log(`ReRevolve: Token captured for ${email}${hasRefresh}`);
+            console.log(`ReRevolve: Token captured for ${targetEmail}${hasRefresh}`);
             
-            vscode.window.showInformationMessage(`ReRevolve: ${email} 토큰 캡처 완료!${hasRefresh}`);
+            vscode.window.showInformationMessage(`ReRevolve: ${targetEmail} 토큰 캡처 완료!${hasRefresh}`);
             return true;
         } catch (err) {
             console.error('ReRevolve: Token capture failed', err);
