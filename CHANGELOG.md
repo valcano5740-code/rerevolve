@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.0] - 2026-02-06 🤖 Auto-Accept Hybrid Mode
+
+### Added
+- 🤖 **VS Code 명령어 기반 Auto-Accept** (1순위)
+  - Antigravity 내부 명령어 직접 호출 (CDP 클릭보다 안정적)
+  - `antigravity.agent.acceptAgentStep` 등 5개 명령어 추가
+- 📚 **참고 자료 GitHub 프로젝트 문서화**
+  - Ricco6/always-accept-antigravity (명령어 발견)
+  - Munkhin/auto-accept-agent (CDP 핸들러 구조)
+
+### Changed
+- 🔄 **하이브리드 Auto-Accept 방식**
+  - 1순위: VS Code 명령어 실행 (빠르고 안정적)
+  - 2순위: CDP DOM 클릭 (백업용)
+- CONTEXT_MAP.md 업데이트 (참고 자료 섹션 추가)
+
+---
+
+
 ## [6.4.0] - 2026-02-06 ⚡ Real-time Account Detection
 
 ### Added

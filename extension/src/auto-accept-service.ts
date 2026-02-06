@@ -1,7 +1,7 @@
 /**
- * Auto-Accept Service - CDP 기반 구현
+ * Auto-Accept Service - CDP 기반 구현 + VS Code 명령어 직접 호출
  * AAA(Auto Accept Agent) 방식 참고
- * v3.0: CDP WebSocket을 통한 직접 DOM 조작
+ * v3.1: CDP WebSocket + Antigravity 내부 명령어 하이브리드 방식
  */
 
 import * as vscode from 'vscode';
@@ -25,8 +25,18 @@ const DANGEROUS_PATTERNS = [
     /chmod\s+-R\s+777\s+\//i,
 ];
 
-// Accept 버튼 텍스트 패턴
-const ACCEPT_PATTERNS = ['accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow'];
+// Antigravity 내부 Accept 명령어 (VS Code API로 직접 호출)
+// Ricco6/always-accept-antigravity에서 참조
+const ANTIGRAVITY_ACCEPT_COMMANDS = [
+    'antigravity.agent.acceptAgentStep',       // 에이전트 스텝 승인
+    'antigravity.terminalCommand.accept',      // 터미널 명령 승인
+    'antigravity.prioritized.agentAcceptFocusedHunk', // Diff 허unk 승인
+    'antigravity.command.accept',               // 일반 명령 승인
+    'antigravity.terminalCommand.run'           // 터미널 명령 실행
+];
+
+// Accept 버튼 텍스트 패턴 (CDP DOM 클릭 fallback용)
+const ACCEPT_PATTERNS = ['accept all', 'accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow'];
 const REJECT_PATTERNS = ['skip', 'reject', 'cancel', 'close', 'refine', 'auto-accept', 'rerevolve', 'quota'];
 
 interface CDPPage {
@@ -133,7 +143,28 @@ export class AutoAcceptService implements vscode.Disposable {
     private async poll(): Promise<void> {
         if (!this._enabled) return;
         
-        // 포트 범위 스캔
+        // 1순위: VS Code 명령어로 직접 Accept (가장 안정적)
+        let commandAccepted = 0;
+        for (const cmd of ANTIGRAVITY_ACCEPT_COMMANDS) {
+            try {
+                await vscode.commands.executeCommand(cmd);
+                commandAccepted++;
+            } catch {
+                // 명령어가 현재 컨텍스트에서 사용 불가 - 무시하고 계속
+            }
+        }
+        
+        if (commandAccepted > 0) {
+            this.stats.codeAccepted += 1;
+            // 피드백 (throttle: 5초에 한 번만)
+            const now = Date.now();
+            if (!this.lastClickFeedback || now - this.lastClickFeedback > 5000) {
+                vscode.window.setStatusBarMessage(`✅ Auto-Accept: 명령어 실행`, 2000);
+                this.lastClickFeedback = now;
+            }
+        }
+        
+        // 2순위: CDP DOM 클릭 (fallback - Accept All 버튼 등)
         for (let port = BASE_PORT - PORT_RANGE; port <= BASE_PORT + PORT_RANGE; port++) {
             try {
                 const pages = await this.getPages(port);
@@ -145,7 +176,7 @@ export class AutoAcceptService implements vscode.Disposable {
                         await this.connect(id, page.webSocketDebuggerUrl);
                     }
                     
-                    // 스크립트 실행
+                    // CDP 스크립트 실행
                     await this.executeAutoAccept(id);
                 }
             } catch {}
@@ -354,11 +385,12 @@ Write-Output 'OK'
         const conn = this.connections.get(id);
         if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
         
-        // Accept 버튼 찾아서 클릭하는 스크립트
+        // Accept 버튼 찾아서 클릭하는 스크립트 (디버그 모드)
         const script = `
             (function() {
                 const acceptPatterns = ${JSON.stringify(ACCEPT_PATTERNS)};
                 const rejectPatterns = ${JSON.stringify(REJECT_PATTERNS)};
+                const DEBUG = true; // 디버그 로그 활성화
                 
                 function isAcceptButton(el) {
                     const text = (el.textContent || '').trim().toLowerCase();
@@ -378,6 +410,30 @@ Write-Output 'OK'
                 // 더 넓은 선택자: 버튼, 클릭 가능한 요소들
                 const selectors = 'button, [class*="button"], [class*="btn"], [role="button"], a[class*="action"], div[class*="action"], span[class*="action"]';
                 const buttons = document.querySelectorAll(selectors);
+                
+                // 디버그: Accept 패턴과 일치하는 버튼만 로깅
+                if (DEBUG) {
+                    const matchingButtons = [];
+                    buttons.forEach(btn => {
+                        const text = (btn.textContent || '').trim().toLowerCase();
+                        if (text.length > 0 && text.length <= 50) {
+                            // "accept" 단어가 포함된 버튼만 로깅
+                            if (text.includes('accept') || text.includes('deny') || text.includes('all')) {
+                                matchingButtons.push({
+                                    text: text.substring(0, 60),
+                                    tag: btn.tagName,
+                                    class: btn.className?.substring?.(0, 50) || '',
+                                    isMatch: acceptPatterns.some(p => text.includes(p)),
+                                    isReject: rejectPatterns.some(r => text.includes(r))
+                                });
+                            }
+                        }
+                    });
+                    if (matchingButtons.length > 0) {
+                        console.log('[ReRevolve DEBUG] Found buttons with accept/deny/all:', JSON.stringify(matchingButtons, null, 2));
+                    }
+                }
+                
                 buttons.forEach(btn => {
                     if (isAcceptButton(btn)) {
                         btn.dispatchEvent(new MouseEvent('click', { 

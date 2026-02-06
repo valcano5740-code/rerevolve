@@ -55,18 +55,37 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 
 ---
 
-## 🤖 Cluster: Auto Accept (CDP)
+## 🤖 Cluster: Auto Accept (CDP + 명령어)
 
 ### Current Understanding
 - [Verified] CDP 연결로 버튼 감지 및 클릭
 - [2026-02-06] 선택자 확장됨: `btn`, `role="button"`, `action` 클래스
 - [2026-02-06] 자체 버튼 제외: `auto-accept`, `rerevolve`, `quota`
+- **[v3.1] VS Code 명령어 직접 호출 추가** (하이브리드)
+- **[v3.1] 참조: Ricco6/always-accept-antigravity**
+
+### Antigravity Accept 명령어 (1순위)
+```
+antigravity.agent.acceptAgentStep       - 에이전트 스텝 승인
+antigravity.terminalCommand.accept      - 터미널 명령 승인
+antigravity.prioritized.agentAcceptFocusedHunk - Diff Hunk 승인
+antigravity.command.accept              - 일반 명령 승인
+antigravity.terminalCommand.run         - 터미널 명령 실행
+```
 
 ### Key Decisions
 | Date | Decision | Rationale |
 |------|----------|-----------|
 | 2026-02-05 | REJECT_PATTERNS에 자체 버튼 추가 | 무한 클릭 방지 |
 | 2026-02-06 | 상태바 피드백 추가 | 작동 여부 확인용 |
+| 2026-02-06 | **VS Code 명령어 1순위 도입** | CDP DOM 클릭보다 안정적 |
+
+### 참고 자료 (GitHub)
+| 프로젝트 | 설명 | 참고 내용 |
+|----------|------|-----------|
+| [Ricco6/always-accept-antigravity](https://github.com/Ricco6/always-accept-antigravity) | Auto Proceed Extension | **Antigravity 명령어 5개 발견** |
+| [Munkhin/auto-accept-agent](https://github.com/Munkhin/auto-accept-agent) | Auto Accept for Antigravity | CDP Handler 구조, 백그라운드 모드 |
+| [Rodhayl/antigravity-multi-purpose-agent](https://github.com/Rodhayl/antigravity-multi-purpose-agent) | 통합 확장 | Auto-Approve 기능 |
 
 ---
 
