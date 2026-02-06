@@ -57,6 +57,7 @@ export class AutoAcceptService implements vscode.Disposable {
         terminalAccepted: 0,
         blockedCommands: 0,
     };
+    private lastClickFeedback: number | null = null;
 
     get isEnabled(): boolean {
         return this._enabled;
@@ -397,6 +398,12 @@ Write-Output 'OK'
             if (result?.result?.value > 0) {
                 this.stats.codeAccepted += result.result.value;
                 console.log(`ReRevolve CDP: Clicked ${result.result.value} buttons`);
+                // 사용자에게 피드백 (throttle: 3초에 한 번만)
+                const now = Date.now();
+                if (!this.lastClickFeedback || now - this.lastClickFeedback > 3000) {
+                    vscode.window.setStatusBarMessage(`✅ Auto-Accept: ${result.result.value} 버튼 클릭`, 2000);
+                    this.lastClickFeedback = now;
+                }
             }
         } catch (err) {
             console.error('ReRevolve CDP: Execution error', err);

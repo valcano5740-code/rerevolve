@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.7] - 2026-02-06 📢 Auto Accept Feedback
+
+### Added
+- 📢 **버튼 클릭 시 상태바 피드백**
+  - 클릭 시 "✅ Auto-Accept: N 버튼 클릭" 메시지 표시
+  - 3초 throttle로 과도한 메시지 방지
+
+---
+
 ## [6.3.6] - 2026-02-05 🔘 Auto Accept Button Fix
 
 ### Fixed
