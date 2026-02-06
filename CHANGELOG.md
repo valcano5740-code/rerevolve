@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.4.0] - 2026-02-06 ⚡ Real-time Account Detection
+
+### Added
+- ⚡ **Language Server API 활성 계정 감지**
+  - 리로드 없이 실시간으로 활성 계정 감지
+  - vscdb 파일 플러시 대기 불필요
+  - 다중 창 지원 (PID/PPID 매칭)
+  - 실패 시 기존 vscdb 방식으로 fallback
+
+### Changed
+- 🔄 **Refresh Token만 저장**
+  - 토큰 캡처 시 Refresh Token만 저장
+  - Access Token은 쿼터 조회 시 항상 새로 발급
+  - 더 안정적인 토큰 관리
+
+---
+
 ## [6.3.8] - 2026-02-06 🚫 Auto Recovery Removed
 
 ### Removed

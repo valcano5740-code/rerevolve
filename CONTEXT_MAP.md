@@ -74,8 +74,50 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 
 ---
 
+## 🔧 Cluster: Toolkit for Antigravity (참고용)
+
+### Extension Info
+- **이름**: Toolkit for Antigravity (이전: Antigravity Panel)
+- **식별자**: `n2ns.antigravity-panel`
+- **버전**: 2.5.11
+- **다운로드**: 62k
+- **개발사**: N2N Synthetics
+- **라이선스**: Apache 2.0
+- **저장소**: https://github.com/n2ns/antigravity-panel
+
+### 특징
+- Quota Monitoring (실시간)
+- Usage Analytics (차트)
+- Cache Management
+- Native Integration
+
+### Current Understanding
+- [Verified] **Language Server HTTP API로 직접 통신** - 파일 읽기 아님!
+- [Verified] `ProcessFinder`로 Language Server 프로세스 자동 감지
+- [Verified] 포트 + CSRF 토큰 추출하여 HTTP POST 요청
+- [Verified] 갱신 주기: `dashboard.refreshRate` 설정값 (기본 60초?)
+- [2026-02-06] 우리 앱보다 갱신 주기가 길지만 (1-2분 vs 30초) 더 빠르게 반응
+
+### 기술 분석 (Verified)
+| 항목 | ReRevolve | Toolkit |
+|------|-----------|---------|
+| **쿼터 감지** | state.vscdb 파일 읽기 | Language Server HTTP API |
+| **계정 감지** | state.vscdb 파일 읽기 | Language Server API 응답 |
+| **통신 방식** | 파일 시스템 | HTTP (localhost:PORT) |
+| **반응 속도** | 느림 (파일 플러시 대기) | 빠름 (실시간) |
+| **서버 감지** | 없음 (고정 경로) | ProcessFinder (프로세스 스캔) |
+
+### 소스 참조
+- **저장소**: https://github.com/n2ns/antigravity-panel
+- **QuotaService**: `src/model/services/quota.service.ts`
+- **ProcessFinder**: `src/shared/platform/process_finder.ts`
+- **API 경로**: `system.apiPath` 설정값 (loadCodeAssist 유사)
+
+---
+
 ## ✅ TODO
 
+- [ ] Toolkit 소스 분석하여 실제 감지 방식 확인
 - [ ] 계정 전환 기능 검증
 - [ ] UI 버튼 이름 변경 ("토큰 캡처" → "계정 저장")
 - [ ] SonarQube 경고 수정

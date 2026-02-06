@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import initSqlJs, { Database } from 'sql.js';
+import { LanguageServerClient } from './language-server-client';
 
 const TOKEN_PREFIX = 'rerevolve.token.';
 const STATE_KEY = 'jetskiStateSync.agentManagerInitState';
@@ -47,8 +48,11 @@ interface StoredCredential {
 export class TokenService {
     private cachedToken: string | null = null;
     private tokenExpiry: Date | null = null;
+    private lsClient: LanguageServerClient;
 
-    constructor(private secrets: vscode.SecretStorage) {}
+    constructor(private secrets: vscode.SecretStorage) {
+        this.lsClient = new LanguageServerClient();
+    }
 
     /**
      * state.vscdb 경로 가져오기
@@ -437,9 +441,29 @@ export class TokenService {
 
     /**
      * 현재 Antigravity에 로그인된 이메일 추출
-     * tfa.lastUserInfo 키에서 직접 추출 (가장 정확함)
+     * 1순위: Language Server API (실시간, 빠름)
+     * 2순위: state.vscdb 파일 (fallback)
      */
     async getCurrentLoggedInEmail(): Promise<string | null> {
+        // 1순위: Language Server API (실시간 감지)
+        try {
+            const email = await this.lsClient.getCurrentEmail();
+            if (email) {
+                console.log(`ReRevolve: Active account from Language Server: ${email}`);
+                return email;
+            }
+        } catch {
+            console.log('ReRevolve: Language Server not available, falling back to vscdb');
+        }
+
+        // 2순위: state.vscdb fallback
+        return this.getCurrentLoggedInEmailFromVscdb();
+    }
+
+    /**
+     * state.vscdb에서 로그인된 이메일 추출 (fallback)
+     */
+    private async getCurrentLoggedInEmailFromVscdb(): Promise<string | null> {
         const dbPath = this.getStateDbPath();
         
         if (!fs.existsSync(dbPath)) {
@@ -517,11 +541,11 @@ export class TokenService {
     }
 
     /**
-     * 토큰 캡처 - 클릭한 계정에 저장, 불일치 시 경고만 표시
+     * 토큰 캡처 - Refresh Token만 저장 (Access Token은 조회 시 발급)
      */
     async captureCurrentToken(email: string): Promise<boolean> {
         try {
-            // 1. antigravityAuthStatus에서 현재 계정 정보 추출
+            // 1. antigravityAuthStatus에서 현재 계정 정보 확인
             const authStatus = await this.getAuthStatus();
             
             if (!authStatus) {
@@ -530,12 +554,6 @@ export class TokenService {
             }
 
             const currentEmail = authStatus.email?.toLowerCase();
-            const accessToken = authStatus.apiKey;
-
-            if (!accessToken) {
-                vscode.window.showErrorMessage('ReRevolve: 토큰을 읽을 수 없습니다.');
-                return false;
-            }
 
             // 2. 계정 불일치 시 경고만 표시 (저장은 진행)
             if (currentEmail && email.toLowerCase() !== currentEmail) {
@@ -545,7 +563,7 @@ export class TokenService {
                 );
             }
 
-            // 3. Refresh token 추출 (여러 소스 시도)
+            // 3. Refresh token 추출 (필수)
             let refreshToken: string | undefined;
             try {
                 // 먼저 oauthToken에서 시도
@@ -557,14 +575,19 @@ export class TokenService {
                     refreshToken = protobufTokens?.refreshToken;
                 }
             } catch {
-                console.log('ReRevolve: Refresh token extraction failed, continuing without it');
+                console.log('ReRevolve: Refresh token extraction failed');
             }
 
-            // 4. 클릭한 계정(email)으로 저장
+            if (!refreshToken) {
+                vscode.window.showErrorMessage('ReRevolve: Refresh Token을 추출할 수 없습니다. 다시 로그인 후 시도해주세요.');
+                return false;
+            }
+
+            // 4. Refresh Token만 저장 (Access Token은 조회 시 발급)
             const credential: StoredCredential = {
-                accessToken,
+                accessToken: '', // 빈 값 - 조회 시 Refresh로 발급
                 refreshToken,
-                expiresAt: Date.now() + 55 * 60 * 1000,
+                expiresAt: 0, // 만료됨 - 조회 시 갱신 필요
                 email: email.toLowerCase(),
                 createdAt: Date.now()
             };
@@ -584,10 +607,8 @@ export class TokenService {
                 console.log('ReRevolve: Debug JSON save failed (non-critical)', debugErr);
             }
 
-            const hasRefresh = refreshToken ? ' (리프레시 토큰 포함 🔄)' : ' (액세스 토큰만)';
-            console.log(`ReRevolve: Token captured for ${email}${hasRefresh}`);
-            
-            vscode.window.showInformationMessage(`ReRevolve: ${email} 토큰 캡처 완료!${hasRefresh}`);
+            console.log(`ReRevolve: Refresh token captured for ${email}`);
+            vscode.window.showInformationMessage(`ReRevolve: ${email} 토큰 캡처 완료! 🔄`);
             return true;
         } catch (err) {
             console.error('ReRevolve: Token capture failed', err);
