@@ -597,21 +597,15 @@ export class TokenService {
     }
 
     /**
-     * 저장된 토큰 조회 (만료 시 갱신 시도, 없으면 자동 복구)
+     * 저장된 토큰 조회 (만료 시 갱신 시도)
+     * [Removed] 자동 복구 기능 - 활성 계정 감지 불안정으로 제거
      */
     async getToken(email: string): Promise<string | null> {
-        let stored = await this.secrets.get(TOKEN_PREFIX + email);
-        
-        // SecretStorage에 없으면 state.vscdb에서 자동 복구 시도
-        if (!stored) {
-            console.log(`ReRevolve: Token not in SecretStorage for ${email}, attempting auto-recovery...`);
-            const recovered = await this.tryAutoRecovery(email);
-            if (recovered) {
-                stored = await this.secrets.get(TOKEN_PREFIX + email);
-            }
-        }
+        const stored = await this.secrets.get(TOKEN_PREFIX + email);
         
         if (!stored) {
+            // 저장된 토큰 없음 - 수동 캡처 필요
+            console.log(`ReRevolve: No token stored for ${email}`);
             return null;
         }
 
@@ -630,20 +624,8 @@ export class TokenService {
                     return refreshed.accessToken;
                 }
                 
-                // 갱신 실패 시 자동 복구 시도 (state.vscdb에서 새 토큰 추출)
-                console.log(`ReRevolve: Token refresh failed for ${email}, attempting auto-recovery...`);
-                const recovered = await this.tryAutoRecovery(email);
-                if (recovered) {
-                    const newStored = await this.secrets.get(TOKEN_PREFIX + email);
-                    if (newStored) {
-                        const newCredential: StoredCredential = JSON.parse(newStored);
-                        console.log(`ReRevolve: Auto-recovery successful for ${email}`);
-                        return newCredential.accessToken;
-                    }
-                }
-                
-                // 자동 복구도 실패하면 기존 만료된 토큰 반환 (API가 401 처리)
-                console.log(`ReRevolve: All recovery attempts failed for ${email}, returning expired token`);
+                // 갱신 실패 - 기존 만료된 토큰 반환 (API가 401 처리)
+                console.log(`ReRevolve: Token refresh failed for ${email}, returning expired token`);
             }
             
             return credential.accessToken;
@@ -737,34 +719,8 @@ export class TokenService {
         await this.secrets.store(TOKEN_PREFIX + email, tokenData);
     }
 
-    /**
-     * 자동 복구 시도 - state.vscdb에서 토큰 추출하여 저장
-     */
-    private async tryAutoRecovery(email: string): Promise<boolean> {
-        try {
-            const tokens = await this.extractTokensFromDb();
-            if (!tokens) {
-                console.log('ReRevolve: Auto-recovery failed - no tokens in state.vscdb');
-                return false;
-            }
-
-            const credential: StoredCredential = {
-                accessToken: tokens.accessToken,
-                refreshToken: tokens.refreshToken,
-                expiresAt: Date.now() + 55 * 60 * 1000,
-                email,
-                createdAt: Date.now()
-            };
-
-            await this.secrets.store(TOKEN_PREFIX + email, JSON.stringify(credential));
-            console.log(`ReRevolve: Auto-recovery successful for ${email}`);
-            vscode.window.showInformationMessage(`ReRevolve: ${email} 토큰 자동 복구 완료! 🔄`);
-            return true;
-        } catch (err) {
-            console.error('ReRevolve: Auto-recovery error', err);
-            return false;
-        }
-    }
+    // [Removed] tryAutoRecovery - 활성 계정 감지 불안정으로 인해 제거됨
+    // 토큰이 없거나 만료된 경우 수동 캡처 필요
 
     // ========== OAuth 인증 플로우 ==========
 

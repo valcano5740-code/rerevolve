@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.3.8] - 2026-02-06 🚫 Auto Recovery Removed
+
+### Removed
+- 🚫 **자동 토큰 복구 기능 제거**
+  - `tryAutoRecovery()` 함수 완전 제거
+  - 활성 계정 감지 불안정으로 잘못된 계정 토큰 저장 버그 수정
+  - 토큰이 없거나 만료된 경우 수동 캡처 필요
+
+---
+
 ## [6.3.7] - 2026-02-06 📢 Auto Accept Feedback
 
 ### Added

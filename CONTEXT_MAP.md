@@ -1,6 +1,6 @@
 # ReRevolve Project Memory
 
-## 🔑 Token Management
+## 📌 Shared Cluster (Global Context)
 
 ### state.vscdb 위치
 ```
@@ -14,82 +14,68 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 | `antigravityUnifiedStateSync.oauthToken` | OAuth 토큰 정보 | Base64 Protobuf |
 | `jetskiStateSync.agentManagerInitState` | 에이전트 상태 | Base64 Protobuf |
 
-### 토큰 캡처 (v6.3.5)
-- **Access Token**: `antigravityAuthStatus.apiKey`
-- **Refresh Token**: 
-  1. `antigravityUnifiedStateSync.oauthToken` (우선)
-  2. `jetskiStateSync.agentManagerInitState` (fallback)
-- **저장 위치**: VSCode SecretStorage (`rerevolve.token.{email}`)
-- **디버그 파일**: `~/.rerevolve-debug/{email}.json`
+---
 
-### 토큰 저장 구조
-```typescript
-interface StoredCredential {
-  accessToken: string;
-  refreshToken?: string;
-  expiresAt: number;
-  email: string;
-  createdAt: number;
-}
-```
+## 🔑 Cluster: Token Management
+
+### Current Understanding
+- [Verified] Access Token은 `antigravityAuthStatus.apiKey`에서 추출
+- [Verified] Refresh Token은 `antigravityUnifiedStateSync.oauthToken` → fallback: `jetskiStateSync`
+- [Verified] 저장 위치: VSCode SecretStorage (`rerevolve.token.{email}`)
+- [Verified] 디버그 파일: `~/.rerevolve-debug/{email}.json`
+- [2026-02-06] 활성 계정 감지는 불안정함 - 리로드 후에야 갱신됨
+
+### Key Decisions
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-02-05 | oauthToken을 primary로 사용 | jetski보다 안정적 |
+| 2026-02-05 | 클릭한 계정에 저장 | 활성 계정 감지 불안정 |
+| 2026-02-06 | 자동 복구 기능 제거 | 잘못된 계정 토큰 저장 버그 |
+
+### Rejected Approaches
+- [Rejected] tryAutoRecovery → 활성 계정 감지 불안정으로 잘못된 토큰 저장
+- [Rejected] jetski-only 추출 → 불완전한 토큰 반환
 
 ---
 
-## 🔄 Account Switching
+## 🔄 Cluster: Account Switching
 
-### 스냅샷 저장
-- **파일**: `account-switcher.ts` → `saveSnapshot()`
-- **내용**: `antigravityAuthStatus` 전체 JSON
-- **위치**: VSCode SecretStorage (`rerevolve.snapshots`)
+### Current Understanding
+- [Estimated] 스냅샷 저장/복원은 구현됨, 검증 필요
+- [Estimated] `state.vscdb` 직접 수정 방식
 
-### 스냅샷 복원
-- **파일**: `account-switcher.ts` → `restoreSnapshot()`
-- **동작**: `state.vscdb`의 `antigravityAuthStatus`에 복원
-
----
-
-## 📊 Quota API
-
-- **엔드포인트**: `https://web2.cursor.sh/auth/loadCodeAssist`
-- **인증**: Bearer Token (Access Token)
+### Key Decisions
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-01 | vscdb 직접 수정 | 폴더 복사보다 효율적 |
 
 ---
 
-## 📝 Decision Log
+## 🤖 Cluster: Auto Accept (CDP)
 
-| 날짜 | 버전 | 변경 내용 |
-|------|------|----------|
-| 2026-02-05 | v6.3.2 | Access Token을 `antigravityAuthStatus.apiKey`에서 추출 |
-| 2026-02-05 | v6.3.3 | Refresh Token을 `oauthToken`에서 먼저 시도 |
-| 2026-02-05 | v6.3.4 | 클릭한 계정에 저장, 불일치 시 경고만 표시 |
-| 2026-02-05 | v6.3.5 | 디버그 JSON 파일 저장 기능 추가 |
+### Current Understanding
+- [Verified] CDP 연결로 버튼 감지 및 클릭
+- [2026-02-06] 선택자 확장됨: `btn`, `role="button"`, `action` 클래스
+- [2026-02-06] 자체 버튼 제외: `auto-accept`, `rerevolve`, `quota`
+
+### Key Decisions
+| Date | Decision | Rationale |
+|------|----------|-----------|
+| 2026-02-05 | REJECT_PATTERNS에 자체 버튼 추가 | 무한 클릭 방지 |
+| 2026-02-06 | 상태바 피드백 추가 | 작동 여부 확인용 |
 
 ---
 
-## 🤖 Auto Accept (CDP 기반)
+## 📊 Cluster: Quota API
 
-### 동작 방식
-- CDP(Chrome DevTools Protocol)로 Antigravity 창에 연결
-- 화면에서 버튼을 찾아 자동 클릭
-
-### 버튼 선택자 (v6.3.6)
-```javascript
-'button, [class*="button"], [class*="btn"], [role="button"], a[class*="action"], div[class*="action"], span[class*="action"]'
-```
-
-### Accept 패턴
-```javascript
-['accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow']
-```
-
-### Reject 패턴 (클릭하지 않음)
-```javascript
-['skip', 'reject', 'cancel', 'close', 'refine', 'auto-accept', 'rerevolve', 'quota']
-```
+### Current Understanding
+- [Verified] 엔드포인트: `https://web2.cursor.sh/auth/loadCodeAssist`
+- [Verified] 인증: Bearer Token (Access Token)
 
 ---
 
 ## ✅ TODO
 
+- [ ] 계정 전환 기능 검증
 - [ ] UI 버튼 이름 변경 ("토큰 캡처" → "계정 저장")
 - [ ] SonarQube 경고 수정
