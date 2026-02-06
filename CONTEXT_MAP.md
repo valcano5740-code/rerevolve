@@ -23,7 +23,8 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 - [Verified] Refresh Token은 `antigravityUnifiedStateSync.oauthToken` → fallback: `jetskiStateSync`
 - [Verified] 저장 위치: VSCode SecretStorage (`rerevolve.token.{email}`)
 - [Verified] 디버그 파일: `~/.rerevolve-debug/{email}.json`
-- [2026-02-06] 활성 계정 감지는 불안정함 - 리로드 후에야 갱신됨
+- [v6.4.0] **Refresh Token만 저장** - Access Token은 쿼터 조회 시 발급
+- [v6.4.0] **Language Server API**로 활성 계정 실시간 감지 (3회 재시도 → vscdb fallback)
 
 ### Key Decisions
 | Date | Decision | Rationale |
@@ -31,10 +32,13 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 | 2026-02-05 | oauthToken을 primary로 사용 | jetski보다 안정적 |
 | 2026-02-05 | 클릭한 계정에 저장 | 활성 계정 감지 불안정 |
 | 2026-02-06 | 자동 복구 기능 제거 | 잘못된 계정 토큰 저장 버그 |
+| 2026-02-06 | Refresh Token만 저장 | 안정적 토큰 관리 |
+| 2026-02-06 | Language Server API 도입 | 실시간 활성 계정 감지 |
 
 ### Rejected Approaches
 - [Rejected] tryAutoRecovery → 활성 계정 감지 불안정으로 잘못된 토큰 저장
 - [Rejected] jetski-only 추출 → 불완전한 토큰 반환
+- [Rejected] Access Token 저장 → 만료 관리 복잡
 
 ---
 

@@ -96,7 +96,7 @@ export class LanguageServerClient {
 
     /**
      * Language Server 감지 (포트 + CSRF 토큰)
-     * 다중 창 지원: 현재 확장 프로세스와 관련된 Language Server만 감지
+     * 모든 창이 같은 계정을 공유하므로 첫 번째 프로세스 사용
      */
     private async detectServer(): Promise<LanguageServerInfo | null> {
         // 캐시된 정보가 있고 30초 이내면 재사용
@@ -105,37 +105,19 @@ export class LanguageServerClient {
         }
 
         try {
-            const myPid = process.pid;
-            const myPpid = process.ppid;
-
-            // Windows: PowerShell로 모든 language_server 프로세스 정보 추출
+            // Windows: PowerShell로 language_server 프로세스 명령줄 추출
             if (process.platform === 'win32') {
                 const { stdout } = await execAsync(
-                    `Get-WmiObject Win32_Process -Filter "name='language_server_windows_x64.exe'" | Select-Object ProcessId, ParentProcessId, CommandLine | Format-List`,
+                    `Get-WmiObject Win32_Process -Filter "name='language_server_windows_x64.exe'" | Select-Object CommandLine | Format-List`,
                     { shell: 'powershell.exe', timeout: 10000 }
                 );
 
-                // 여러 프로세스가 있을 수 있음 - 관련된 것만 필터링
-                const processes = this.parseWindowsProcesses(stdout);
-                const matched = this.findRelatedProcess(processes, myPid, myPpid);
-                
-                if (matched) {
-                    this.serverInfo = matched;
+                const info = this.parseCommandLine(stdout);
+                if (info) {
+                    this.serverInfo = info;
                     this.lastDetectTime = Date.now();
-                    console.log(`ReRevolve LS: Server detected on port ${matched.port} (matched by PID relationship)`);
-                    return matched;
-                }
-
-                // 관계 매칭 실패 시 첫 번째 사용 (단일 창인 경우)
-                if (processes.length === 1) {
-                    this.serverInfo = processes[0];
-                    this.lastDetectTime = Date.now();
-                    console.log(`ReRevolve LS: Server detected on port ${processes[0].port} (single instance)`);
-                    return processes[0];
-                }
-
-                if (processes.length > 1) {
-                    console.log(`ReRevolve LS: Multiple servers found (${processes.length}), but couldn't match to current window`);
+                    console.log(`ReRevolve LS: Server detected on port ${info.port}`);
+                    return info;
                 }
             }
             // macOS/Linux
@@ -145,24 +127,16 @@ export class LanguageServerClient {
                     : 'language_server_linux';
                 
                 const { stdout } = await execAsync(
-                    `ps -eo pid,ppid,command | grep "${processName}" | grep -v grep`,
+                    `ps aux | grep "${processName}" | grep -v grep`,
                     { timeout: 10000 }
                 );
 
-                const processes = this.parseUnixProcesses(stdout);
-                const matched = this.findRelatedProcess(processes, myPid, myPpid);
-                
-                if (matched) {
-                    this.serverInfo = matched;
+                const info = this.parseCommandLine(stdout);
+                if (info) {
+                    this.serverInfo = info;
                     this.lastDetectTime = Date.now();
-                    console.log(`ReRevolve LS: Server detected on port ${matched.port}`);
-                    return matched;
-                }
-
-                if (processes.length === 1) {
-                    this.serverInfo = processes[0];
-                    this.lastDetectTime = Date.now();
-                    return processes[0];
+                    console.log(`ReRevolve LS: Server detected on port ${info.port}`);
+                    return info;
                 }
             }
         } catch {
@@ -172,77 +146,6 @@ export class LanguageServerClient {
         return null;
     }
 
-    /**
-     * Windows 프로세스 목록 파싱
-     */
-    private parseWindowsProcesses(stdout: string): (LanguageServerInfo & { pid: number; ppid: number })[] {
-        const results: (LanguageServerInfo & { pid: number; ppid: number })[] = [];
-        
-        // 각 프로세스 블록 분리
-        const blocks = stdout.split(/\r?\n\r?\n/).filter(b => b.trim());
-        
-        for (const block of blocks) {
-            const pidMatch = block.match(/ProcessId\s*:\s*(\d+)/);
-            const ppidMatch = block.match(/ParentProcessId\s*:\s*(\d+)/);
-            const cmdMatch = block.match(/CommandLine\s*:\s*(.+)/s);
-            
-            if (pidMatch && ppidMatch && cmdMatch) {
-                const info = this.parseCommandLine(cmdMatch[1]);
-                if (info) {
-                    results.push({
-                        ...info,
-                        pid: parseInt(pidMatch[1], 10),
-                        ppid: parseInt(ppidMatch[1], 10)
-                    });
-                }
-            }
-        }
-        
-        return results;
-    }
-
-    /**
-     * Unix 프로세스 목록 파싱
-     */
-    private parseUnixProcesses(stdout: string): (LanguageServerInfo & { pid: number; ppid: number })[] {
-        const results: (LanguageServerInfo & { pid: number; ppid: number })[] = [];
-        
-        for (const line of stdout.split('\n').filter(l => l.trim())) {
-            const parts = line.trim().split(/\s+/);
-            if (parts.length >= 3) {
-                const pid = parseInt(parts[0], 10);
-                const ppid = parseInt(parts[1], 10);
-                const cmdLine = parts.slice(2).join(' ');
-                
-                const info = this.parseCommandLine(cmdLine);
-                if (info) {
-                    results.push({ ...info, pid, ppid });
-                }
-            }
-        }
-        
-        return results;
-    }
-
-    /**
-     * 현재 확장과 관련된 프로세스 찾기 (PID/PPID 매칭)
-     */
-    private findRelatedProcess(
-        processes: (LanguageServerInfo & { pid: number; ppid: number })[],
-        myPid: number,
-        myPpid: number
-    ): LanguageServerInfo | null {
-        // 1. 직접 자식 (우리 PID의 자식)
-        const child = processes.find(p => p.ppid === myPid);
-        if (child) return { port: child.port, csrfToken: child.csrfToken };
-
-        // 2. 형제 (같은 부모)
-        const sibling = processes.find(p => p.ppid === myPpid);
-        if (sibling) return { port: sibling.port, csrfToken: sibling.csrfToken };
-
-        // 3. 조상 관계 (더 넓은 탐색 - 간단히 생략)
-        return null;
-    }
 
     /**
      * 명령줄에서 포트와 CSRF 토큰 추출
