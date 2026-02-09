@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.5.2] - 2026-02-09 🔧 CDP Worker 지원
+
+### Fixed
+- 🔧 **CDP 페이지 타입 확장**
+  - `worker` 타입 페이지 지원 추가
+  - Antigravity CDP 연결 호환성 개선
+  - Accept All 버튼 DOM 클릭 안정화
+
+---
+
+## [6.5.1] - 2026-02-09 🔇 Auto-Accept Silent Mode
+
+### Changed
+- 🔇 **Auto-Accept 피드백 개선**
+  - 불필요한 상태바 깜빡임 제거
+  - 활성화 시 한 번만 "활성 (명령어 모드)" 표시
+  - 이후 명령어 실행은 조용히 진행
+- 폴링 방식 유지 (1초 주기, 5개 명령어 시도)
+
+---
+
 ## [6.5.0] - 2026-02-06 🤖 Auto-Accept Hybrid Mode
 
 ### Added

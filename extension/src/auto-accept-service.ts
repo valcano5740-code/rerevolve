@@ -68,6 +68,7 @@ export class AutoAcceptService implements vscode.Disposable {
         blockedCommands: 0,
     };
     private lastClickFeedback: number | null = null;
+    private hasShownActiveFeedback = false;  // 활성화 피드백 표시 여부
 
     get isEnabled(): boolean {
         return this._enabled;
@@ -113,6 +114,7 @@ export class AutoAcceptService implements vscode.Disposable {
         
         this._enabled = false;
         this._onStatusChange.fire(false);
+        this.hasShownActiveFeedback = false;  // 피드백 플래그 리셋
         
         if (this.pollTimer) {
             clearInterval(this.pollTimer);
@@ -156,11 +158,10 @@ export class AutoAcceptService implements vscode.Disposable {
         
         if (commandAccepted > 0) {
             this.stats.codeAccepted += 1;
-            // 피드백 (throttle: 5초에 한 번만)
-            const now = Date.now();
-            if (!this.lastClickFeedback || now - this.lastClickFeedback > 5000) {
-                vscode.window.setStatusBarMessage(`✅ Auto-Accept: 명령어 실행`, 2000);
-                this.lastClickFeedback = now;
+            // 피드백: 활성화 후 첫 실행 시에만 표시 (불필요한 깜빡임 방지)
+            if (!this.hasShownActiveFeedback) {
+                vscode.window.setStatusBarMessage(`✅ Auto-Accept: 활성 (명령어 모드)`, 3000);
+                this.hasShownActiveFeedback = true;
             }
         }
         
@@ -345,10 +346,10 @@ Write-Output 'OK'
                 res.on('end', () => {
                     try {
                         const pages = JSON.parse(body) as CDPPage[];
-                        // page, webview, iframe 모두 포함 (에디터 Diff Overlay 등)
+                        // page, webview, iframe, worker 모두 포함 (에디터 Diff Overlay 등)
                         resolve(pages.filter(p => 
                             p.webSocketDebuggerUrl && 
-                            (p.type === 'page' || p.type === 'webview' || p.type === 'iframe')
+                            (p.type === 'page' || p.type === 'webview' || p.type === 'iframe' || p.type === 'worker')
                         ));
                     } catch { resolve([]); }
                 });
