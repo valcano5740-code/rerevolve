@@ -145,27 +145,10 @@ export class AutoAcceptService implements vscode.Disposable {
     private async poll(): Promise<void> {
         if (!this._enabled) return;
         
-        // 1순위: VS Code 명령어로 직접 Accept (가장 안정적)
-        let commandAccepted = 0;
-        for (const cmd of ANTIGRAVITY_ACCEPT_COMMANDS) {
-            try {
-                await vscode.commands.executeCommand(cmd);
-                commandAccepted++;
-            } catch {
-                // 명령어가 현재 컨텍스트에서 사용 불가 - 무시하고 계속
-            }
-        }
+        // [Removed] VS Code 명령어 자동 실행 - Ctrl+Alt+P 시 열린 창이 사라지는 부작용
+        // 기존: ANTIGRAVITY_ACCEPT_COMMANDS 반복 실행 → 열린 파일이 자동 accept되면서 창이 닫힘
         
-        if (commandAccepted > 0) {
-            this.stats.codeAccepted += 1;
-            // 피드백: 활성화 후 첫 실행 시에만 표시 (불필요한 깜빡임 방지)
-            if (!this.hasShownActiveFeedback) {
-                vscode.window.setStatusBarMessage(`✅ Auto-Accept: 활성 (명령어 모드)`, 3000);
-                this.hasShownActiveFeedback = true;
-            }
-        }
-        
-        // 2순위: CDP DOM 클릭 (Accept All 버튼 등)
+        // CDP DOM 클릭 (Accept All 버튼 등)
         for (let port = BASE_PORT - PORT_RANGE; port <= BASE_PORT + PORT_RANGE; port++) {
             try {
                 // (A) 기존 page-level 연결 (page/webview/iframe/worker)
@@ -317,7 +300,9 @@ export class AutoAcceptService implements vscode.Disposable {
     }
 
     /**
-     * Accept 스크립트 생성 (재사용)
+     * Accept 스크립트 생성 (iframe 내부 탐색 포함)
+     * Reddit r/google_antigravity 발견: Accept 버튼은 iframe 안에 있음
+     * className에 'bg-ide-button-bac' 또는 'hover:bg-ide-button-hover' 포함
      */
     private getAcceptScript(): string {
         return `
@@ -329,31 +314,48 @@ export class AutoAcceptService implements vscode.Disposable {
                     const text = (el.textContent || '').trim().toLowerCase();
                     if (text.length === 0 || text.length > 50) return false;
                     if (rejectPatterns.some(r => text.includes(r))) return false;
-                    if (!acceptPatterns.some(p => text.includes(p))) return false;
                     
-                    const style = window.getComputedStyle(el);
-                    const rect = el.getBoundingClientRect();
-                    return style.display !== 'none' && 
-                           rect.width > 0 && 
-                           style.pointerEvents !== 'none' && 
-                           !el.disabled;
+                    const className = (el.className || '').toString();
+                    
+                    // Antigravity 전용: IDE 버튼 클래스 확인
+                    const isIdeButton = className.includes('hover:bg-ide-button-hover') ||
+                                       className.includes('bg-ide-button-bac');
+                    
+                    // 텍스트 패턴 매칭 (IDE 버튼이면 accept 텍스트만 있으면 OK)
+                    const hasAcceptText = acceptPatterns.some(p => text.includes(p));
+                    if (!hasAcceptText) return false;
+                    
+                    // 보이는 버튼인지 확인
+                    return el.offsetWidth > 0 && el.offsetHeight > 0 && !el.disabled;
                 }
                 
                 let clicked = 0;
-                const selectors = 'button, [class*="button"], [class*="btn"], [role="button"], a[class*="action"], div[class*="action"], span[class*="action"]';
-                const buttons = document.querySelectorAll(selectors);
                 
-                buttons.forEach(btn => {
+                // 1. 메인 document에서 탐색
+                document.querySelectorAll('button, [role="button"]').forEach(btn => {
                     if (isAcceptButton(btn)) {
-                        btn.dispatchEvent(new MouseEvent('click', { 
-                            view: window, 
-                            bubbles: true, 
-                            cancelable: true 
-                        }));
+                        btn.click();
                         clicked++;
-                        console.log('[ReRevolve] Clicked:', btn.textContent.trim());
+                        console.log('[ReRevolve] Clicked (main):', btn.textContent.trim());
                     }
                 });
+                
+                // 2. iframe 내부에서 탐색 (Antigravity Accept 버튼 위치)
+                document.querySelectorAll('iframe').forEach(iframe => {
+                    try {
+                        const iframeDoc = iframe.contentDocument || iframe.contentWindow.document;
+                        if (!iframeDoc) return;
+                        
+                        iframeDoc.querySelectorAll('button').forEach(btn => {
+                            if (isAcceptButton(btn)) {
+                                btn.click();
+                                clicked++;
+                                console.log('[ReRevolve] Clicked (iframe):', btn.textContent.trim());
+                            }
+                        });
+                    } catch(e) { /* cross-origin iframe 접근 불가 */ }
+                });
+                
                 return clicked;
             })();
         `;
