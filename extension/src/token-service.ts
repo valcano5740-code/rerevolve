@@ -635,6 +635,7 @@ export class TokenService {
     private startLoopbackOAuth(email: string): Promise<{ code: string; redirectUri: string } | null> {
         return new Promise((resolve) => {
             let resolved = false;
+            let serverPort = 0; // server.close() 후에도 포트 참조 가능하도록 저장
             
             const server = http.createServer((req, res) => {
                 // favicon 등 무관한 요청 무시
@@ -682,8 +683,7 @@ export class TokenService {
                 clearTimeout(timeout);
 
                 if (code) {
-                    const addr = server.address() as { port: number };
-                    resolve({ code, redirectUri: `http://localhost:${addr.port}` });
+                    resolve({ code, redirectUri: `http://localhost:${serverPort}` });
                 } else {
                     vscode.window.showErrorMessage(`OAuth 인증 실패: ${error || '사용자 취소'}`);
                     resolve(null);
@@ -693,8 +693,8 @@ export class TokenService {
             // 빈 포트에서 시작
             server.listen(0, '127.0.0.1', () => {
                 const addr = server.address() as { port: number };
-                const port = addr.port;
-                const redirectUri = `http://localhost:${port}`;
+                serverPort = addr.port; // 외부 변수에 포트 저장
+                const redirectUri = `http://localhost:${serverPort}`;
                 const scope = encodeURIComponent('openid email profile https://www.googleapis.com/auth/cloud-platform');
                 
                 const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
