@@ -52,6 +52,46 @@ export class TokenService {
 
     constructor(private globalState: vscode.Memento) {
         this.lsClient = new LanguageServerClient();
+        this.migrateFromDebugFiles();
+    }
+
+    /**
+     * ~/.rerevolve-debug/*.json에서 globalState로 자동 마이그레이션
+     * SecretStorage → globalState 전환 시 기존 토큰 자동 복원
+     */
+    private migrateFromDebugFiles(): void {
+        try {
+            const debugDir = path.join(os.homedir(), '.rerevolve-debug');
+            if (!fs.existsSync(debugDir)) return;
+
+            const files = fs.readdirSync(debugDir).filter(f => f.endsWith('.json'));
+            let migrated = 0;
+
+            for (const file of files) {
+                try {
+                    const content = fs.readFileSync(path.join(debugDir, file), 'utf8');
+                    const credential = JSON.parse(content) as StoredCredential;
+                    
+                    if (!credential.email || !credential.refreshToken) continue;
+
+                    const key = TOKEN_PREFIX + credential.email.toLowerCase();
+                    const existing = this.globalState.get<string>(key);
+                    
+                    // globalState에 없으면 마이그레이션
+                    if (!existing) {
+                        this.globalState.update(key, JSON.stringify(credential));
+                        migrated++;
+                        console.log(`ReRevolve: 마이그레이션 완료 - ${credential.email} (debug JSON → globalState)`);
+                    }
+                } catch {}
+            }
+
+            if (migrated > 0) {
+                vscode.window.showInformationMessage(`🔄 ${migrated}개 계정 토큰 자동 마이그레이션 완료!`);
+            }
+        } catch (err) {
+            console.log('ReRevolve: 마이그레이션 실패 (non-critical)', err);
+        }
     }
 
     /**
