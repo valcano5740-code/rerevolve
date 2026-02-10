@@ -41,6 +41,8 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 | 2026-02-06 | Language Server API 도입 | 실시간 활성 계정 감지 |
 | 2026-02-10 | OAuth 캡처 전환 | state.vscdb의 refresh token 계정 불일치 문제 |
 | 2026-02-10 | **OOB → loopback redirect** | Google OOB(`urn:ietf:wg:oauth:2.0:oob`) 폐지됨 → `http://localhost` 방식 |
+| 2026-02-10 | VS Code 명령어 자동 accept 제거 | Ctrl+Alt+P 시 열린 창이 닫히는 부작용 |
+| 2026-02-10 | Accept 스크립트 iframe 탐색 추가 | Reddit 발견: Accept 버튼은 iframe 내부 `bg-ide-button-bac` 클래스 |
 
 ### Rejected Approaches
 - [Rejected] tryAutoRecovery → 활성 계정 감지 불안정으로 잘못된 토큰 저장
