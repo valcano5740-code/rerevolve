@@ -27,6 +27,9 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 - [v6.4.0] **Language Server API**로 활성 계정 실시간 감지 (3회 재시도 → vscdb fallback)
 - [v6.6.0] **Export/Import에 refresh token 포함** - 기기 간 이동 가능
 - [v6.6.0] **토큰 캡처: state.vscdb → OAuth 인증 전환** - 계정별 정확한 refresh token 보장
+- [v6.6.3] **OAuth loopback redirect** 완성 - OOB 폐지 대응, 로컬 HTTP 서버로 인증 코드 자동 수신
+  - ⚠️ gotcha: `server.close()` 후 `server.address()` = null → 포트를 외부 변수에 미리 저장 필수
+  - ⚠️ gotcha: 브라우저 favicon.ico 요청 → code/error 없는 요청은 무시 처리 필요
 
 ### Key Decisions
 | Date | Decision | Rationale |

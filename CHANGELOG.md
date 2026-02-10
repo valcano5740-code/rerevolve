@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.3] - 2026-02-10 🔧 OAuth loopback 안정화
+
+### Fixed
+- 🐛 `server.close()` 후 `server.address()` null 반환 → `serverPort` 외부 변수로 해결
+- 🐛 favicon.ico 등 브라우저 부가 요청이 "사용자 취소"로 처리되던 문제 수정
+- 🐛 `redirect_uri_mismatch` (인증 시 포트 포함 vs 교환 시 포트 미포함) 수정
+
+### Changed
+- 🔑 OAuth OOB 방식 폐지 대응 → **loopback redirect** 전환 완료
+  - 로컬 HTTP 서버가 빈 포트에서 자동 시작 → 인증 코드 자동 수신
+  - 수동 코드 입력 불필요, 브라우저 로그인만으로 캡처 완료
+
+---
+
 ## [6.6.0] - 2026-02-10 🚀 이식성 확보 (globalState 마이그레이션)
 
 ### Changed
