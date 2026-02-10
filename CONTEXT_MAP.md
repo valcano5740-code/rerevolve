@@ -26,6 +26,7 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 - [v6.4.0] **Refresh Token만 저장** - Access Token은 쿼터 조회 시 발급
 - [v6.4.0] **Language Server API**로 활성 계정 실시간 감지 (3회 재시도 → vscdb fallback)
 - [v6.6.0] **Export/Import에 refresh token 포함** - 기기 간 이동 가능
+- [v6.6.0] **토큰 캡처: state.vscdb → OAuth 인증 전환** - 계정별 정확한 refresh token 보장
 
 ### Key Decisions
 | Date | Decision | Rationale |

@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 📤 **Export 개선**: raw credential 내보내기 (refresh token 포함)
   - 다른 기기에서 import 후 즉시 토큰 사용 가능
 - 🔧 **account-switcher**: 스냅샷도 globalState로 이동
+- 🔑 **토큰 캡처 방식 전환**: state.vscdb 추출 → **Google OAuth 인증**
+  - Antigravity 로그인 계정과 무관하게 어떤 Google 계정이든 캡처 가능
+  - 계정별 정확한 refresh token 보장
 
 ### Note
 - ⚠️ 기존 SecretStorage 토큰은 마이그레이션 안됨 → 토큰 재캡처 필요

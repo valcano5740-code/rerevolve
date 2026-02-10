@@ -581,75 +581,67 @@ export class TokenService {
     }
 
     /**
-     * 토큰 캡처 - Refresh Token만 저장 (Access Token은 조회 시 발급)
+     * 토큰 캡처 - OAuth 인증으로 해당 계정의 Refresh Token 직접 발급
+     * state.vscdb 의존 없이, Google OAuth를 통해 정확한 계정의 토큰 획득
      */
     async captureCurrentToken(email: string): Promise<boolean> {
         try {
-            // 1. antigravityAuthStatus에서 현재 계정 정보 확인
-            const authStatus = await this.getAuthStatus();
-            
-            if (!authStatus) {
-                vscode.window.showErrorMessage('ReRevolve: 현재 로그인된 계정을 감지할 수 없습니다. Antigravity에 로그인되어 있는지 확인하세요.');
+            if (!ANTIGRAVITY_CLIENT_ID || !ANTIGRAVITY_CLIENT_SECRET) {
+                vscode.window.showErrorMessage('ReRevolve: OAuth 자격증명이 없습니다. .credentials.json을 확인하세요.');
                 return false;
             }
 
-            const currentEmail = authStatus.email?.toLowerCase();
+            // OAuth 인증 페이지 열기 → 인증 코드 입력 → 토큰 교환
+            const redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
+            const scope = encodeURIComponent('openid email profile https://www.googleapis.com/auth/cloud-platform');
+            
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+                `client_id=${ANTIGRAVITY_CLIENT_ID}` +
+                `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+                `&response_type=code` +
+                `&scope=${scope}` +
+                `&access_type=offline` +
+                `&prompt=consent` +
+                `&login_hint=${encodeURIComponent(email)}`;
+            
+            console.log(`ReRevolve: OAuth 캡처 시작 - ${email}`);
+            
+            // 브라우저에서 인증 페이지 열기
+            await vscode.env.openExternal(vscode.Uri.parse(authUrl));
+            
+            // 인증 코드 입력 받기
+            const code = await vscode.window.showInputBox({
+                prompt: `🔐 브라우저에서 ${email}로 로그인 후, 표시된 인증 코드를 붙여넣으세요`,
+                placeHolder: '4/0XXXXXX...',
+                ignoreFocusOut: true,
+                password: false
+            });
 
-            // 2. 계정 불일치 시 경고만 표시 (저장은 진행)
-            if (currentEmail && email.toLowerCase() !== currentEmail) {
-                vscode.window.showWarningMessage(
-                    `⚠️ 주의: 현재 로그인된 계정은 ${currentEmail}입니다. ` +
-                    `${email}의 토큰이 맞는지 확인하세요.`
-                );
-            }
-
-            // 3. Refresh token 추출 (필수)
-            let refreshToken: string | undefined;
-            try {
-                // 먼저 oauthToken에서 시도
-                refreshToken = await this.getRefreshToken() || undefined;
-                
-                // 실패 시 Protobuf 방식으로 fallback
-                if (!refreshToken) {
-                    const protobufTokens = await this.extractTokensWithProtobuf();
-                    refreshToken = protobufTokens?.refreshToken;
-                }
-            } catch {
-                console.log('ReRevolve: Refresh token extraction failed');
-            }
-
-            if (!refreshToken) {
-                vscode.window.showErrorMessage('ReRevolve: Refresh Token을 추출할 수 없습니다. 다시 로그인 후 시도해주세요.');
+            if (!code) {
+                vscode.window.showWarningMessage('토큰 캡처가 취소되었습니다.');
                 return false;
             }
 
-            // 4. Refresh Token만 저장 (Access Token은 조회 시 발급)
-            const credential: StoredCredential = {
-                accessToken: '', // 빈 값 - 조회 시 Refresh로 발급
-                refreshToken,
-                expiresAt: 0, // 만료됨 - 조회 시 갱신 필요
-                email: email.toLowerCase(),
-                createdAt: Date.now()
-            };
-
-            await this.globalState.update(TOKEN_PREFIX + email.toLowerCase(), JSON.stringify(credential));
+            // 인증 코드 → 토큰 교환
+            const success = await this.exchangeCodeForToken(code.trim(), email);
             
-            // 디버그용 JSON 파일 저장 (개발 중 확인용)
-            try {
-                const debugDir = path.join(os.homedir(), '.rerevolve-debug');
-                if (!fs.existsSync(debugDir)) {
-                    fs.mkdirSync(debugDir, { recursive: true });
-                }
-                const debugFile = path.join(debugDir, `${email.toLowerCase().replace('@', '_at_')}.json`);
-                fs.writeFileSync(debugFile, JSON.stringify(credential, null, 2));
-                console.log(`ReRevolve: Debug JSON saved to ${debugFile}`);
-            } catch (debugErr) {
-                console.log('ReRevolve: Debug JSON save failed (non-critical)', debugErr);
+            if (success) {
+                // 디버그용 JSON 파일도 업데이트
+                try {
+                    const stored = this.globalState.get<string>(TOKEN_PREFIX + email.toLowerCase());
+                    if (stored) {
+                        const debugDir = path.join(os.homedir(), '.rerevolve-debug');
+                        if (!fs.existsSync(debugDir)) {
+                            fs.mkdirSync(debugDir, { recursive: true });
+                        }
+                        const debugFile = path.join(debugDir, `${email.toLowerCase().replace('@', '_at_')}.json`);
+                        fs.writeFileSync(debugFile, stored);
+                        console.log(`ReRevolve: Debug JSON updated: ${debugFile}`);
+                    }
+                } catch {}
             }
 
-            console.log(`ReRevolve: Refresh token captured for ${email}`);
-            vscode.window.showInformationMessage(`ReRevolve: ${email} 토큰 캡처 완료! 🔄`);
-            return true;
+            return success;
         } catch (err) {
             console.error('ReRevolve: Token capture failed', err);
             vscode.window.showErrorMessage(`ReRevolve: 토큰 캡처 실패: ${err}`);
