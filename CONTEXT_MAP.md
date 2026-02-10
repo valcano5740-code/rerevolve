@@ -36,11 +36,15 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 | 2026-02-06 | 자동 복구 기능 제거 | 잘못된 계정 토큰 저장 버그 |
 | 2026-02-06 | Refresh Token만 저장 | 안정적 토큰 관리 |
 | 2026-02-06 | Language Server API 도입 | 실시간 활성 계정 감지 |
+| 2026-02-10 | OAuth 캡처 전환 | state.vscdb의 refresh token 계정 불일치 문제 |
+| 2026-02-10 | **OOB → loopback redirect** | Google OOB(`urn:ietf:wg:oauth:2.0:oob`) 폐지됨 → `http://localhost` 방식 |
 
 ### Rejected Approaches
 - [Rejected] tryAutoRecovery → 활성 계정 감지 불안정으로 잘못된 토큰 저장
 - [Rejected] jetski-only 추출 → 불완전한 토큰 반환
 - [Rejected] Access Token 저장 → 만료 관리 복잡
+- [Rejected] state.vscdb에서 refresh token 추출 → 계정 전환 시 갱신 안 됨
+- [Rejected] **OOB OAuth** (`urn:ietf:wg:oauth:2.0:oob`) → Google 폐지 (400 invalid_request)
 
 ---
 

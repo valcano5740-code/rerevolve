@@ -7,6 +7,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as http from 'http';
 import initSqlJs, { Database } from 'sql.js';
 import { LanguageServerClient } from './language-server-client';
 
@@ -581,8 +582,8 @@ export class TokenService {
     }
 
     /**
-     * 토큰 캡처 - OAuth 인증으로 해당 계정의 Refresh Token 직접 발급
-     * state.vscdb 의존 없이, Google OAuth를 통해 정확한 계정의 토큰 획득
+     * 토큰 캡처 - OAuth Loopback Redirect로 해당 계정의 Refresh Token 직접 발급
+     * 로컬 HTTP 서버를 띄워 Google OAuth 콜백을 자동 수신
      */
     async captureCurrentToken(email: string): Promise<boolean> {
         try {
@@ -591,39 +592,17 @@ export class TokenService {
                 return false;
             }
 
-            // OAuth 인증 페이지 열기 → 인증 코드 입력 → 토큰 교환
-            const redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
-            const scope = encodeURIComponent('openid email profile https://www.googleapis.com/auth/cloud-platform');
-            
-            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-                `client_id=${ANTIGRAVITY_CLIENT_ID}` +
-                `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-                `&response_type=code` +
-                `&scope=${scope}` +
-                `&access_type=offline` +
-                `&prompt=consent` +
-                `&login_hint=${encodeURIComponent(email)}`;
-            
-            console.log(`ReRevolve: OAuth 캡처 시작 - ${email}`);
-            
-            // 브라우저에서 인증 페이지 열기
-            await vscode.env.openExternal(vscode.Uri.parse(authUrl));
-            
-            // 인증 코드 입력 받기
-            const code = await vscode.window.showInputBox({
-                prompt: `🔐 브라우저에서 ${email}로 로그인 후, 표시된 인증 코드를 붙여넣으세요`,
-                placeHolder: '4/0XXXXXX...',
-                ignoreFocusOut: true,
-                password: false
-            });
+            console.log(`ReRevolve: OAuth 캡처 시작 (loopback) - ${email}`);
 
-            if (!code) {
-                vscode.window.showWarningMessage('토큰 캡처가 취소되었습니다.');
-                return false;
+            // 1. 로컬 HTTP 서버로 인증 코드 자동 수신
+            const authCode = await this.startLoopbackOAuth(email);
+            
+            if (!authCode) {
+                return false; // 사용자 취소 또는 타임아웃
             }
 
-            // 인증 코드 → 토큰 교환
-            const success = await this.exchangeCodeForToken(code.trim(), email);
+            // 2. 인증 코드 → 토큰 교환
+            const success = await this.exchangeCodeForToken(authCode, email, 'http://localhost');
             
             if (success) {
                 // 디버그용 JSON 파일도 업데이트
@@ -647,6 +626,73 @@ export class TokenService {
             vscode.window.showErrorMessage(`ReRevolve: 토큰 캡처 실패: ${err}`);
             return false;
         }
+    }
+
+    /**
+     * Loopback OAuth - 로컬 HTTP 서버로 인증 코드 자동 수신
+     * Google OAuth 페이지를 브라우저에서 열고, 콜백으로 인증 코드를 받음
+     */
+    private startLoopbackOAuth(email: string): Promise<string | null> {
+        return new Promise((resolve) => {
+            const server = http.createServer((req, res) => {
+                const url = new URL(req.url || '', `http://localhost`);
+                const code = url.searchParams.get('code');
+                const error = url.searchParams.get('error');
+
+                // 성공 응답 페이지
+                res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+                if (code) {
+                    res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+                        <h1>✅ 인증 성공!</h1>
+                        <p>${email} 토큰 캡처 완료. 이 창을 닫아도 됩니다.</p>
+                    </body></html>`);
+                } else {
+                    res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
+                        <h1>❌ 인증 실패</h1>
+                        <p>오류: ${error || '알 수 없는 오류'}</p>
+                    </body></html>`);
+                }
+
+                // 서버 종료
+                server.close();
+                clearTimeout(timeout);
+
+                if (code) {
+                    resolve(code);
+                } else {
+                    vscode.window.showErrorMessage(`OAuth 인증 실패: ${error || '사용자 취소'}`);
+                    resolve(null);
+                }
+            });
+
+            // 빈 포트에서 시작
+            server.listen(0, '127.0.0.1', () => {
+                const addr = server.address() as { port: number };
+                const port = addr.port;
+                const redirectUri = `http://localhost:${port}`;
+                const scope = encodeURIComponent('openid email profile https://www.googleapis.com/auth/cloud-platform');
+                
+                const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+                    `client_id=${ANTIGRAVITY_CLIENT_ID}` +
+                    `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+                    `&response_type=code` +
+                    `&scope=${scope}` +
+                    `&access_type=offline` +
+                    `&prompt=consent` +
+                    `&login_hint=${encodeURIComponent(email)}`;
+                
+                // 브라우저에서 인증 페이지 열기
+                vscode.env.openExternal(vscode.Uri.parse(authUrl));
+                vscode.window.showInformationMessage(`🔐 브라우저에서 ${email}로 로그인하세요...`);
+            });
+
+            // 3분 타임아웃
+            const timeout = setTimeout(() => {
+                server.close();
+                vscode.window.showWarningMessage('OAuth 인증 시간 초과 (3분)');
+                resolve(null);
+            }, 180000);
+        });
     }
 
     /**
@@ -837,8 +883,9 @@ export class TokenService {
 
     /**
      * 인증 코드를 토큰으로 교환
+     * @param redirectUri OAuth redirect_uri (loopback 사용 시 포트 포함)
      */
-    async exchangeCodeForToken(code: string, email: string): Promise<boolean> {
+    async exchangeCodeForToken(code: string, email: string, redirectUri: string = 'http://localhost'): Promise<boolean> {
         try {
             console.log(`ReRevolve: Exchanging auth code for ${email}`);
             
@@ -849,7 +896,7 @@ export class TokenService {
                     code: code,
                     client_id: ANTIGRAVITY_CLIENT_ID,
                     client_secret: ANTIGRAVITY_CLIENT_SECRET,
-                    redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+                    redirect_uri: redirectUri,
                     grant_type: 'authorization_code',
                 }),
             });
