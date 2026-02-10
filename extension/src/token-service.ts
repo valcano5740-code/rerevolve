@@ -580,7 +580,6 @@ export class TokenService {
 
         return null;
     }
-
     /**
      * 토큰 캡처 - OAuth Loopback Redirect로 해당 계정의 Refresh Token 직접 발급
      * 로컬 HTTP 서버를 띄워 Google OAuth 콜백을 자동 수신
@@ -595,14 +594,14 @@ export class TokenService {
             console.log(`ReRevolve: OAuth 캡처 시작 (loopback) - ${email}`);
 
             // 1. 로컬 HTTP 서버로 인증 코드 자동 수신
-            const authCode = await this.startLoopbackOAuth(email);
+            const result = await this.startLoopbackOAuth(email);
             
-            if (!authCode) {
+            if (!result) {
                 return false; // 사용자 취소 또는 타임아웃
             }
 
-            // 2. 인증 코드 → 토큰 교환
-            const success = await this.exchangeCodeForToken(authCode, email, 'http://localhost');
+            // 2. 인증 코드 → 토큰 교환 (정확한 redirect_uri 전달)
+            const success = await this.exchangeCodeForToken(result.code, email, result.redirectUri);
             
             if (success) {
                 // 디버그용 JSON 파일도 업데이트
@@ -631,15 +630,40 @@ export class TokenService {
     /**
      * Loopback OAuth - 로컬 HTTP 서버로 인증 코드 자동 수신
      * Google OAuth 페이지를 브라우저에서 열고, 콜백으로 인증 코드를 받음
+     * @returns { code, redirectUri } 또는 null
      */
-    private startLoopbackOAuth(email: string): Promise<string | null> {
+    private startLoopbackOAuth(email: string): Promise<{ code: string; redirectUri: string } | null> {
         return new Promise((resolve) => {
+            let resolved = false;
+            
             const server = http.createServer((req, res) => {
-                const url = new URL(req.url || '', `http://localhost`);
+                // favicon 등 무관한 요청 무시
+                if (!req.url || req.url.startsWith('/favicon')) {
+                    res.writeHead(204);
+                    res.end();
+                    return;
+                }
+
+                const url = new URL(req.url, `http://localhost`);
                 const code = url.searchParams.get('code');
                 const error = url.searchParams.get('error');
 
-                // 성공 응답 페이지
+                // code도 error도 없으면 무시 (브라우저의 추가 요청)
+                if (!code && !error) {
+                    res.writeHead(204);
+                    res.end();
+                    return;
+                }
+
+                // 이미 처리된 경우 무시
+                if (resolved) {
+                    res.writeHead(204);
+                    res.end();
+                    return;
+                }
+                resolved = true;
+
+                // 응답 페이지
                 res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
                 if (code) {
                     res.end(`<html><body style="font-family:sans-serif;text-align:center;padding:60px">
@@ -658,7 +682,8 @@ export class TokenService {
                 clearTimeout(timeout);
 
                 if (code) {
-                    resolve(code);
+                    const addr = server.address() as { port: number };
+                    resolve({ code, redirectUri: `http://localhost:${addr.port}` });
                 } else {
                     vscode.window.showErrorMessage(`OAuth 인증 실패: ${error || '사용자 취소'}`);
                     resolve(null);
@@ -688,9 +713,12 @@ export class TokenService {
 
             // 3분 타임아웃
             const timeout = setTimeout(() => {
-                server.close();
-                vscode.window.showWarningMessage('OAuth 인증 시간 초과 (3분)');
-                resolve(null);
+                if (!resolved) {
+                    resolved = true;
+                    server.close();
+                    vscode.window.showWarningMessage('OAuth 인증 시간 초과 (3분)');
+                    resolve(null);
+                }
             }, 180000);
         });
     }
