@@ -165,23 +165,198 @@ export class AutoAcceptService implements vscode.Disposable {
             }
         }
         
-        // 2순위: CDP DOM 클릭 (fallback - Accept All 버튼 등)
+        // 2순위: CDP DOM 클릭 (Accept All 버튼 등)
         for (let port = BASE_PORT - PORT_RANGE; port <= BASE_PORT + PORT_RANGE; port++) {
             try {
+                // (A) 기존 page-level 연결 (page/webview/iframe/worker)
                 const pages = await this.getPages(port);
                 for (const page of pages) {
                     const id = `${port}:${page.id}`;
-                    
-                    // 새 페이지면 연결
                     if (!this.connections.has(id)) {
                         await this.connect(id, page.webSocketDebuggerUrl);
                     }
-                    
-                    // CDP 스크립트 실행
                     await this.executeAutoAccept(id);
                 }
+                
+                // (B) browser-level WebSocket 연결 (메인 UI 접근용)
+                await this.connectAndEvalViaBrowser(port);
             } catch {}
         }
+    }
+
+    /**
+     * Browser-level WebSocket으로 메인 Electron 창에 접근하여 Accept 스크립트 실행
+     * /json/list에 page가 안 나오는 Electron 앱 (Antigravity) 대응
+     */
+    private async connectAndEvalViaBrowser(port: number): Promise<void> {
+        const browserId = `browser:${port}`;
+        
+        // 이미 연결되어 있으면 바로 실행
+        if (this.connections.has(browserId)) {
+            await this.executeAutoAcceptViaBrowser(browserId);
+            return;
+        }
+        
+        // /json/version에서 browser WebSocket URL 가져오기
+        try {
+            const versionInfo = await this.getVersionInfo(port);
+            if (versionInfo?.webSocketDebuggerUrl) {
+                const connected = await this.connect(browserId, versionInfo.webSocketDebuggerUrl);
+                if (connected) {
+                    await this.executeAutoAcceptViaBrowser(browserId);
+                }
+            }
+        } catch {}
+    }
+
+    /**
+     * /json/version에서 browser WebSocket URL 가져오기
+     */
+    private getVersionInfo(port: number): Promise<{ webSocketDebuggerUrl: string } | null> {
+        return new Promise((resolve) => {
+            const req = http.get({
+                hostname: '127.0.0.1',
+                port,
+                path: '/json/version',
+                timeout: 500
+            }, (res) => {
+                let body = '';
+                res.on('data', chunk => body += chunk);
+                res.on('end', () => {
+                    try {
+                        resolve(JSON.parse(body));
+                    } catch { resolve(null); }
+                });
+            });
+            req.on('error', () => resolve(null));
+            req.on('timeout', () => { req.destroy(); resolve(null); });
+        });
+    }
+
+    /**
+     * Browser-level WebSocket에서 Target.getTargets → 각 page에 attachToTarget → Runtime.evaluate
+     */
+    private async executeAutoAcceptViaBrowser(browserId: string): Promise<void> {
+        const conn = this.connections.get(browserId);
+        if (!conn || conn.ws.readyState !== WebSocket.OPEN) return;
+
+        try {
+            // 모든 타겟 조회
+            const targetsResult = await this.sendCDP(conn, 'Target.getTargets', {});
+            if (!targetsResult?.targetInfos) return;
+
+            // page 타입 타겟 필터링 (Electron 메인 창)
+            const pageTargets = targetsResult.targetInfos.filter(
+                (t: any) => t.type === 'page' && !t.url?.startsWith('devtools://')
+            );
+
+            for (const target of pageTargets) {
+                try {
+                    // 타겟에 attach (이미 attached면 에러 → catch에서 무시)
+                    const attachResult = await this.sendCDP(conn, 'Target.attachToTarget', {
+                        targetId: target.targetId,
+                        flatten: true
+                    });
+
+                    const sessionId = attachResult?.sessionId;
+                    if (!sessionId) continue;
+
+                    // 해당 세션에서 Accept 스크립트 실행
+                    const script = this.getAcceptScript();
+                    const evalResult = await this.sendCDP(conn, 'Runtime.evaluate', {
+                        expression: script,
+                        userGesture: true,
+                        awaitPromise: true
+                    }, sessionId);
+
+                    if (evalResult?.result?.value > 0) {
+                        this.stats.codeAccepted += evalResult.result.value;
+                        console.log(`ReRevolve CDP (browser): Clicked ${evalResult.result.value} buttons via Target`);
+                        const now = Date.now();
+                        if (!this.lastClickFeedback || now - this.lastClickFeedback > 3000) {
+                            vscode.window.setStatusBarMessage(`✅ Accept All: ${evalResult.result.value} 버튼 클릭`, 2000);
+                            this.lastClickFeedback = now;
+                        }
+                    }
+                } catch {}
+            }
+        } catch (err) {
+            console.error('ReRevolve CDP (browser): Target evaluation error', err);
+        }
+    }
+
+    /**
+     * CDP 메시지 전송 헬퍼 (sessionId 지원)
+     */
+    private sendCDP(conn: CDPConnection, method: string, params: any, sessionId?: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            if (conn.ws.readyState !== WebSocket.OPEN) {
+                return resolve(null);
+            }
+            const currentId = this.msgId++;
+            const timeout = setTimeout(() => resolve(null), 2000);
+            
+            const onMessage = (data: WebSocket.Data) => {
+                try {
+                    const msg = JSON.parse(data.toString());
+                    if (msg.id === currentId) {
+                        conn.ws.off('message', onMessage);
+                        clearTimeout(timeout);
+                        resolve(msg.result);
+                    }
+                } catch {}
+            };
+            
+            conn.ws.on('message', onMessage);
+            const message: any = { id: currentId, method, params };
+            if (sessionId) {
+                message.sessionId = sessionId;
+            }
+            conn.ws.send(JSON.stringify(message));
+        });
+    }
+
+    /**
+     * Accept 스크립트 생성 (재사용)
+     */
+    private getAcceptScript(): string {
+        return `
+            (function() {
+                const acceptPatterns = ${JSON.stringify(ACCEPT_PATTERNS)};
+                const rejectPatterns = ${JSON.stringify(REJECT_PATTERNS)};
+                
+                function isAcceptButton(el) {
+                    const text = (el.textContent || '').trim().toLowerCase();
+                    if (text.length === 0 || text.length > 50) return false;
+                    if (rejectPatterns.some(r => text.includes(r))) return false;
+                    if (!acceptPatterns.some(p => text.includes(p))) return false;
+                    
+                    const style = window.getComputedStyle(el);
+                    const rect = el.getBoundingClientRect();
+                    return style.display !== 'none' && 
+                           rect.width > 0 && 
+                           style.pointerEvents !== 'none' && 
+                           !el.disabled;
+                }
+                
+                let clicked = 0;
+                const selectors = 'button, [class*="button"], [class*="btn"], [role="button"], a[class*="action"], div[class*="action"], span[class*="action"]';
+                const buttons = document.querySelectorAll(selectors);
+                
+                buttons.forEach(btn => {
+                    if (isAcceptButton(btn)) {
+                        btn.dispatchEvent(new MouseEvent('click', { 
+                            view: window, 
+                            bubbles: true, 
+                            cancelable: true 
+                        }));
+                        clicked++;
+                        console.log('[ReRevolve] Clicked:', btn.textContent.trim());
+                    }
+                });
+                return clicked;
+            })();
+        `;
     }
 
     private async isCDPAvailable(): Promise<boolean> {
