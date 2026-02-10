@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.6.0] - 2026-02-10 🚀 이식성 확보 (globalState 마이그레이션)
+
+### Changed
+- 🔄 **토큰 저장소 변경**: SecretStorage → globalState
+  - 기기 간 이동 가능 (Export/Import에 refresh token 포함)
+  - Settings Sync 지원으로 자동 동기화 가능
+- 📤 **Export 개선**: raw credential 내보내기 (refresh token 포함)
+  - 다른 기기에서 import 후 즉시 토큰 사용 가능
+- 🔧 **account-switcher**: 스냅샷도 globalState로 이동
+
+### Note
+- ⚠️ 기존 SecretStorage 토큰은 마이그레이션 안됨 → 토큰 재캡처 필요
+
+---
+
 ## [6.5.2] - 2026-02-09 🔧 CDP Worker 지원
 
 ### Fixed

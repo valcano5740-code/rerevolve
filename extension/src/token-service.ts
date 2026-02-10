@@ -1,6 +1,6 @@
 /**
  * Token Service - Antigravity 토큰 추출 및 관리
- * state.vscdb에서 ya29 토큰 추출, SecretStorage에 저장
+ * state.vscdb에서 ya29 토큰 추출, globalState에 저장 (이식성 확보)
  */
 
 import * as vscode from 'vscode';
@@ -50,7 +50,7 @@ export class TokenService {
     private tokenExpiry: Date | null = null;
     private lsClient: LanguageServerClient;
 
-    constructor(private secrets: vscode.SecretStorage) {
+    constructor(private globalState: vscode.Memento) {
         this.lsClient = new LanguageServerClient();
     }
 
@@ -592,7 +592,7 @@ export class TokenService {
                 createdAt: Date.now()
             };
 
-            await this.secrets.store(TOKEN_PREFIX + email.toLowerCase(), JSON.stringify(credential));
+            await this.globalState.update(TOKEN_PREFIX + email.toLowerCase(), JSON.stringify(credential));
             
             // 디버그용 JSON 파일 저장 (개발 중 확인용)
             try {
@@ -622,7 +622,7 @@ export class TokenService {
      * [Removed] 자동 복구 기능 - 활성 계정 감지 불안정으로 제거
      */
     async getToken(email: string): Promise<string | null> {
-        const stored = await this.secrets.get(TOKEN_PREFIX + email);
+        const stored = this.globalState.get<string>(TOKEN_PREFIX + email);
         
         if (!stored) {
             // 저장된 토큰 없음 - 수동 캡처 필요
@@ -640,7 +640,7 @@ export class TokenService {
                 if (refreshed) {
                     credential.accessToken = refreshed.accessToken;
                     credential.expiresAt = refreshed.expiresAt;
-                    await this.secrets.store(TOKEN_PREFIX + email, JSON.stringify(credential));
+                    await this.globalState.update(TOKEN_PREFIX + email, JSON.stringify(credential));
                     console.log(`ReRevolve: Token refreshed successfully for ${email}`);
                     return refreshed.accessToken;
                 }
@@ -700,7 +700,7 @@ export class TokenService {
      * 토큰이 만료되었지만 refreshToken이 있으면 true 반환 (갱신 가능)
      */
     async hasToken(email: string): Promise<boolean> {
-        const stored = await this.secrets.get(TOKEN_PREFIX + email);
+        const stored = this.globalState.get<string>(TOKEN_PREFIX + email);
         if (!stored || stored.length <= 10) {
             return false;
         }
@@ -730,14 +730,21 @@ export class TokenService {
      * 토큰 삭제
      */
     async deleteToken(email: string): Promise<void> {
-        await this.secrets.delete(TOKEN_PREFIX + email);
+        await this.globalState.update(TOKEN_PREFIX + email, undefined);
     }
 
     /**
      * 토큰 저장 (가져오기용)
      */
     async saveToken(email: string, tokenData: string): Promise<void> {
-        await this.secrets.store(TOKEN_PREFIX + email, tokenData);
+        await this.globalState.update(TOKEN_PREFIX + email, tokenData);
+    }
+
+    /**
+     * Raw credential 조회 (Export용 - refresh token 포함)
+     */
+    getRawCredential(email: string): string | undefined {
+        return this.globalState.get<string>(TOKEN_PREFIX + email);
     }
 
     // [Removed] tryAutoRecovery - 활성 계정 감지 불안정으로 인해 제거됨
@@ -843,7 +850,7 @@ export class TokenService {
                 createdAt: Date.now()
             };
 
-            await this.secrets.store(TOKEN_PREFIX + email, JSON.stringify(credential));
+            await this.globalState.update(TOKEN_PREFIX + email, JSON.stringify(credential));
 
             const hasRefresh = data.refresh_token ? ' (리프레시 토큰 포함 🔄)' : ' (액세스 토큰만)';
             console.log(`ReRevolve: OAuth successful for ${email}${hasRefresh}`);
@@ -861,7 +868,7 @@ export class TokenService {
      * OAuth 인증 여부 확인 (리프레시 토큰 존재 여부)
      */
     async hasValidOAuth(email: string): Promise<boolean> {
-        const stored = await this.secrets.get(TOKEN_PREFIX + email);
+        const stored = this.globalState.get<string>(TOKEN_PREFIX + email);
         if (!stored) return false;
 
         try {

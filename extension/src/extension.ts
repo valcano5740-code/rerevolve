@@ -88,7 +88,7 @@ export function activate(context: vscode.ExtensionContext) {
 
     // 서비스 초기화
     accountManager = new AccountManager(context);
-    tokenService = new TokenService(context.secrets);
+    tokenService = new TokenService(context.globalState);
     quotaService = new QuotaService();
     autoAcceptService = new AutoAcceptService();
     accountSwitcher = new AccountSwitcher(context);

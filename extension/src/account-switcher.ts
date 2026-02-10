@@ -1,7 +1,7 @@
 /**
  * Account Switcher Service
  * state.vscdb의 antigravityAuthStatus를 수정하여 Antigravity 활성 계정 변경
- * 스냅샷을 SecretStorage에 암호화하여 저장
+ * 스냅샷을 globalState에 저장 (이식성 확보)
  */
 import * as vscode from 'vscode';
 import * as path from 'path';
@@ -18,13 +18,13 @@ const SNAPSHOTS_KEY = 'rerevolve_snapshots';
 
 export class AccountSwitcher implements vscode.Disposable {
     private dbPath: string;
-    private secrets: vscode.SecretStorage;
+    private globalState: vscode.Memento;
     private snapshotsCache: Record<string, AccountSnapshot> | null = null;
 
     constructor(context: vscode.ExtensionContext) {
         const appData = process.env.APPDATA || '';
         this.dbPath = path.join(appData, 'Antigravity', 'User', 'globalStorage', 'state.vscdb');
-        this.secrets = context.secrets;
+        this.globalState = context.globalState;
     }
 
     dispose(): void {}
@@ -57,7 +57,7 @@ export class AccountSwitcher implements vscode.Disposable {
             };
             await this.saveSnapshots(snapshots);
             
-            console.log(`ReRevolve: ${email} 스냅샷 저장됨 (SecretStorage)`);
+            console.log(`ReRevolve: ${email} 스냅샷 저장됨 (globalState)`);
             vscode.window.showInformationMessage(`✅ ${email} 계정 스냅샷 저장됨`);
             return true;
         } catch (err) {
@@ -139,7 +139,7 @@ export class AccountSwitcher implements vscode.Disposable {
         }
 
         try {
-            const data = await this.secrets.get(SNAPSHOTS_KEY);
+            const data = this.globalState.get<string>(SNAPSHOTS_KEY);
             if (data) {
                 this.snapshotsCache = JSON.parse(data);
                 return this.snapshotsCache!;
@@ -153,7 +153,7 @@ export class AccountSwitcher implements vscode.Disposable {
 
     private async saveSnapshots(snapshots: Record<string, AccountSnapshot>): Promise<void> {
         try {
-            await this.secrets.store(SNAPSHOTS_KEY, JSON.stringify(snapshots));
+            await this.globalState.update(SNAPSHOTS_KEY, JSON.stringify(snapshots));
             this.snapshotsCache = snapshots;
         } catch (err) {
             console.error('ReRevolve: 스냅샷 저장 실패', err);

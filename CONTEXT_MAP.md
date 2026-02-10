@@ -21,10 +21,11 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 ### Current Understanding
 - [Verified] Access Token은 `antigravityAuthStatus.apiKey`에서 추출
 - [Verified] Refresh Token은 `antigravityUnifiedStateSync.oauthToken` → fallback: `jetskiStateSync`
-- [Verified] 저장 위치: VSCode SecretStorage (`rerevolve.token.{email}`)
+- [Verified] 저장 위치: VSCode globalState (`rerevolve.token.{email}`) ← v6.6.0에서 SecretStorage→globalState 이전
 - [Verified] 디버그 파일: `~/.rerevolve-debug/{email}.json`
 - [v6.4.0] **Refresh Token만 저장** - Access Token은 쿼터 조회 시 발급
 - [v6.4.0] **Language Server API**로 활성 계정 실시간 감지 (3회 재시도 → vscdb fallback)
+- [v6.6.0] **Export/Import에 refresh token 포함** - 기기 간 이동 가능
 
 ### Key Decisions
 | Date | Decision | Rationale |

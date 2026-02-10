@@ -261,19 +261,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const accounts = this.accountManager.getAccounts();
             const tokens: { [email: string]: string } = {};
             
-            // 각 계정의 토큰 수집
+            // 각 계정의 raw credential 수집 (refresh token 포함)
             for (const account of accounts) {
-                const hasToken = await this.tokenService.hasToken(account.email);
-                if (hasToken) {
-                    const token = await this.tokenService.getToken(account.email);
-                    if (token) {
-                        tokens[account.email] = token;
-                    }
+                const rawCredential = this.tokenService.getRawCredential(account.email);
+                if (rawCredential) {
+                    tokens[account.email] = rawCredential;
                 }
             }
             
             const exportData = {
-                version: '0.1.9',
+                version: '6.6.0',
                 exportDate: new Date().toISOString(),
                 accounts: accounts,
                 tokens: tokens,
@@ -288,7 +285,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             if (uri) {
                 const fs = require('fs');
                 fs.writeFileSync(uri.fsPath, JSON.stringify(exportData, null, 2));
-                vscode.window.showInformationMessage(`데이터가 저장되었습니다: ${uri.fsPath}`);
+                const tokenCount = Object.keys(tokens).length;
+                vscode.window.showInformationMessage(`📤 데이터 내보내기 완료! (${accounts.length}개 계정, ${tokenCount}개 토큰)`);
             }
         } catch (error) {
             vscode.window.showErrorMessage(`내보내기 실패: ${error}`);
