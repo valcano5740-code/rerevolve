@@ -64,6 +64,9 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 - [2026-02-06] 자체 버튼 제외: `auto-accept`, `rerevolve`, `quota`
 - **[v3.1] VS Code 명령어 직접 호출 추가** (하이브리드)
 - **[v3.1] 참조: Ricco6/always-accept-antigravity**
+- **[v6.6.0] browser-level WebSocket 추가** - `/json/version`으로 메인 UI 접근
+  - `/json/list`에 worker만 노출되는 Electron 앱 대응
+  - `Target.getTargets()` → `Target.attachToTarget()` → `Runtime.evaluate`
 
 ### Antigravity Accept 명령어 (1순위)
 ```
@@ -80,6 +83,7 @@ antigravity.terminalCommand.run         - 터미널 명령 실행
 | 2026-02-05 | REJECT_PATTERNS에 자체 버튼 추가 | 무한 클릭 방지 |
 | 2026-02-06 | 상태바 피드백 추가 | 작동 여부 확인용 |
 | 2026-02-06 | **VS Code 명령어 1순위 도입** | CDP DOM 클릭보다 안정적 |
+| 2026-02-10 | **browser-level WebSocket 추가** | `/json/list`에 page 없고 worker만 노출 |
 
 ### 참고 자료 (GitHub)
 | 프로젝트 | 설명 | 참고 내용 |
