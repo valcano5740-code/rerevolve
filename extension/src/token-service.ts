@@ -472,13 +472,6 @@ export class TokenService {
         return null;
     }
 
-    /**
-     * 파일에서 직접 ya29 토큰 추출 (호환성용 - deprecated)
-     */
-    async extractTokenFromDb(): Promise<string | null> {
-        const result = await this.extractTokensFromDb();
-        return result?.accessToken || null;
-    }
 
     /**
      * 현재 Antigravity에 로그인된 이메일 추출
@@ -853,61 +846,6 @@ export class TokenService {
         return this.globalState.get<string>(TOKEN_PREFIX + email);
     }
 
-    // [Removed] tryAutoRecovery - 활성 계정 감지 불안정으로 인해 제거됨
-    // 토큰이 없거나 만료된 경우 수동 캡처 필요
-
-    // ========== OAuth 인증 플로우 ==========
-
-    /**
-     * OAuth 인증 URL 생성 및 브라우저 열기
-     */
-    async startOAuthFlow(email: string): Promise<void> {
-        // Google OAuth 2.0 인증 URL 생성
-        const redirectUri = 'urn:ietf:wg:oauth:2.0:oob';
-        const scope = encodeURIComponent('openid email profile https://www.googleapis.com/auth/cloud-platform');
-        
-        const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-            `client_id=${ANTIGRAVITY_CLIENT_ID}` +
-            `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-            `&response_type=code` +
-            `&scope=${scope}` +
-            `&access_type=offline` +
-            `&prompt=consent` +
-            `&login_hint=${encodeURIComponent(email)}`;
-        
-        console.log(`ReRevolve: Starting OAuth flow for ${email}`);
-        
-        // 브라우저에서 인증 페이지 열기
-        await vscode.env.openExternal(vscode.Uri.parse(authUrl));
-        
-        vscode.window.showInformationMessage(
-            `🔐 브라우저에서 ${email}로 로그인하세요. 인증 코드가 표시되면 복사하세요.`,
-            '인증 코드 입력'
-        ).then(async (selection) => {
-            if (selection === '인증 코드 입력') {
-                await this.promptForAuthCode(email);
-            }
-        });
-    }
-
-    /**
-     * 인증 코드 입력 프롬프트
-     */
-    async promptForAuthCode(email: string): Promise<boolean> {
-        const code = await vscode.window.showInputBox({
-            prompt: `${email}의 인증 코드를 입력하세요`,
-            placeHolder: '4/0XXXXXX...',
-            ignoreFocusOut: true,
-            password: false
-        });
-
-        if (!code) {
-            vscode.window.showWarningMessage('인증이 취소되었습니다.');
-            return false;
-        }
-
-        return await this.exchangeCodeForToken(code.trim(), email);
-    }
 
     /**
      * 인증 코드를 토큰으로 교환

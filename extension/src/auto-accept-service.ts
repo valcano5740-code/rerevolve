@@ -36,8 +36,9 @@ const ANTIGRAVITY_ACCEPT_COMMANDS = [
 ];
 
 // Accept 버튼 텍스트 패턴 (CDP DOM 클릭 fallback용)
-const ACCEPT_PATTERNS = ['accept all', 'accept', 'run', 'retry', 'apply', 'execute', 'confirm', 'allow once', 'allow'];
-const REJECT_PATTERNS = ['skip', 'reject', 'cancel', 'close', 'refine', 'auto-accept', 'rerevolve', 'quota'];
+// 주의: 'run'은 'Always run' 드롭박스에 매칭되어 깜빡임 유발 → 제거
+const ACCEPT_PATTERNS = ['accept all', 'accept', 'retry', 'apply', 'execute', 'confirm'];
+const REJECT_PATTERNS = ['skip', 'reject', 'cancel', 'close', 'refine', 'auto-accept', 'rerevolve', 'quota', 'always run', 'always', 'ask every time', 'allow'];
 
 interface CDPPage {
     id: string;
