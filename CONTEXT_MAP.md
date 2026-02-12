@@ -74,17 +74,16 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 - [2026-02-06] 자체 버튼 제외: `auto-accept`, `rerevolve`, `quota`
 - **[v3.1] VS Code 명령어 직접 호출 추가** (하이브리드)
 - **[v3.1] 참조: Ricco6/always-accept-antigravity**
-- **[v6.6.0] browser-level WebSocket 추가** - `/json/version`으로 메인 UI 접근
-  - `/json/list`에 worker만 노출되는 Electron 앱 대응
-  - `Target.getTargets()` → `Target.attachToTarget()` → `Runtime.evaluate`
+- **[v6.6.0] browser-level WebSocket 추가** (제거됨 v6.7.0)
+- **[v6.7.0] pesosz 방식 전면 교체 (CDP 제거)**
+  - `antigravity.agent.acceptAgentStep`
+  - `antigravity.terminal.accept`
+  - 500ms 인터벌 실행 (가장 단순하고 확실한 방법)
 
 ### Antigravity Accept 명령어 (1순위)
 ```
-antigravity.agent.acceptAgentStep       - 에이전트 스텝 승인
-antigravity.terminalCommand.accept      - 터미널 명령 승인
-antigravity.prioritized.agentAcceptFocusedHunk - Diff Hunk 승인
-antigravity.command.accept              - 일반 명령 승인
-antigravity.terminalCommand.run         - 터미널 명령 실행
+antigravity.agent.acceptAgentStep       - 에이전트 스텝 승인 (Accept All)
+antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식)
 ```
 
 ### Key Decisions
@@ -92,15 +91,15 @@ antigravity.terminalCommand.run         - 터미널 명령 실행
 |------|----------|-----------|
 | 2026-02-05 | REJECT_PATTERNS에 자체 버튼 추가 | 무한 클릭 방지 |
 | 2026-02-06 | 상태바 피드백 추가 | 작동 여부 확인용 |
-| 2026-02-06 | **VS Code 명령어 1순위 도입** | CDP DOM 클릭보다 안정적 |
-| 2026-02-10 | **browser-level WebSocket 추가** | `/json/list`에 page 없고 worker만 노출 |
+| 2026-02-06 | VS Code 명령어 1순위 도입 | CDP DOM 클릭보다 안정적 |
+| 2026-02-10 | browser-level WebSocket 추가 | `/json/list`에 page 없고 worker만 노출 |
+| 2026-02-12 | **CDP 전면 제거 (pesosz 방식)** | Electron 네이티브 UI 접근 불가, 내부 명령어가 정답 |
 
 ### 참고 자료 (GitHub)
 | 프로젝트 | 설명 | 참고 내용 |
 |----------|------|-----------|
-| [Ricco6/always-accept-antigravity](https://github.com/Ricco6/always-accept-antigravity) | Auto Proceed Extension | **Antigravity 명령어 5개 발견** |
-| [Munkhin/auto-accept-agent](https://github.com/Munkhin/auto-accept-agent) | Auto Accept for Antigravity | CDP Handler 구조, 백그라운드 모드 |
-| [Rodhayl/antigravity-multi-purpose-agent](https://github.com/Rodhayl/antigravity-multi-purpose-agent) | 통합 확장 | Auto-Approve 기능 |
+| [pesosz/antigravity-auto-accept](https://marketplace.visualstudio.com/items?itemName=pesosz.antigravity-auto-accept) | **Auto Accept (v1.0.3)** | **`terminal.accept` 명령어 사용 (핵심)** |
+| [Ricco6/always-accept-antigravity](https://github.com/Ricco6/always-accept-antigravity) | Auto Proceed Extension | 명령어 참조 |
 
 ---
 
@@ -159,3 +158,12 @@ antigravity.terminalCommand.run         - 터미널 명령 실행
 - [ ] 계정 전환 기능 검증
 - [ ] UI 버튼 이름 변경 ("토큰 캡처" → "계정 저장")
 - [ ] SonarQube 경고 수정
+
+---
+
+## 📜 History
+
+### v6.7.0 (2026-02-12)
+- **Auto-Accept 전면 개편**: CDP 제거, pesosz 방식(VS Code 내부 명령어 직접 호출) 적용
+- **Boost 런처 수정**: `--remote-debugging-port` 옵션 제거 (계정 전환 세션 고착 문제 해결)
+- **Dead Code 제거**: OOB OAuth, CDP 관련 코드 삭제
