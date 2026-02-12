@@ -251,25 +251,13 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota();
     }, 60000);
 
-    // Auto-Accept 자동 활성화: CDP 설정 확인 및 자동 시작
-    setTimeout(async () => {
-        console.log('ReRevolve: Auto-Accept 자동 활성화 시도');
-        
-        // 먼저 CDP가 이미 활성화되어 있는지 확인
-        const isConnected = await autoAcceptService.tryConnect();
-        
-        if (isConnected) {
-            console.log('ReRevolve: CDP 연결 성공! Auto-Accept 자동 시작');
-            if (!autoAcceptService.isEnabled) {
-                autoAcceptService.start();
-                vscode.window.showInformationMessage('✅ Auto-Accept 자동 활성화됨!');
-            }
-        } else {
-            // CDP가 없으면 바로가기에 자동으로 설정 시도 (조용히)
-            console.log('ReRevolve: CDP 미연결. 바로가기 자동 설정 시도...');
-            await autoAcceptService.setupCDPSilent();
+    // Auto-Accept 자동 활성화 (pesosz 방식 - CDP 불필요)
+    setTimeout(() => {
+        console.log('ReRevolve: Auto-Accept 자동 활성화');
+        if (!autoAcceptService.isEnabled) {
+            autoAcceptService.start();
         }
-    }, 3000); // 3초 후 시도
+    }, 3000); // 3초 후 시작
 }
 
 export function deactivate() {

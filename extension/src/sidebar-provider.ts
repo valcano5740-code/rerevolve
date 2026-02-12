@@ -158,12 +158,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         enabled: isEnabled 
                     });
                     break;
-                case 'setupCDP':
-                    await this.autoAcceptService.setupCDP();
-                    break;
-                case 'removeCDP':
-                    await this.autoAcceptService.removeCDP();
-                    break;
                 case 'openRules':
                     const rulesPath = path.join(process.env.USERPROFILE || '', '.gemini', 'GEMINI.md');
                     if (fs.existsSync(rulesPath)) {
@@ -1177,13 +1171,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 <button id="autoAcceptBtn" class="btn btn-auto-accept" onclick="toggleAutoAccept()" title="Auto-Accept 토글">
                     <span id="autoAcceptIcon">🔴</span> Auto-Accept
                 </button>
-                <div class="dropdown">
-                    <button class="btn btn-pin dropdown-toggle" onclick="toggleCDPMenu(event)" title="CDP 설정">⚙️</button>
-                    <div class="dropdown-menu" id="cdpDropdown">
-                        <button onclick="setupCDP()">🔧 CDP 설정</button>
-                        <button onclick="removeCDP()">🗑️ CDP 제거</button>
-                    </div>
-                </div>
                 <button id="pinBtn" class="btn btn-pin" onclick="togglePin()" title="하단 고정">
                     <span id="pinIcon">📌</span>
                 </button>
@@ -1327,32 +1314,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
         }
         
-        function toggleCDPMenu(event) {
-            event.stopPropagation();
-            const dropdown = document.getElementById('cdpDropdown');
-            dropdown.classList.toggle('show');
-            
-            // 외부 클릭 시 닫기
-            setTimeout(() => {
-                document.addEventListener('click', closeCDPMenu);
-            }, 0);
-        }
-        
-        function closeCDPMenu() {
-            const dropdown = document.getElementById('cdpDropdown');
-            dropdown.classList.remove('show');
-            document.removeEventListener('click', closeCDPMenu);
-        }
-        
-        function setupCDP() {
-            closeCDPMenu();
-            vscode.postMessage({ command: 'setupCDP' });
-        }
-        
-        function removeCDP() {
-            closeCDPMenu();
-            vscode.postMessage({ command: 'removeCDP' });
-        }
+
         
         // 유틸리티 버튼 핸들러
         function openRules() {
