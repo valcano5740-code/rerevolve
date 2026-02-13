@@ -98,7 +98,7 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 ### 참고 자료 (GitHub)
 | 프로젝트 | 설명 | 참고 내용 |
 |----------|------|-----------|
-| [pesosz/antigravity-auto-accept](https://marketplace.visualstudio.com/items?itemName=pesosz.antigravity-auto-accept) | **Auto Accept (v1.0.3)** | **`terminal.accept` 명령어 사용 (핵심)** |
+| [pesosz/antigravity-auto-accept](https://marketplace.visualstudio.com/items?itemName=pesosz.antigravity-auto-accept) | **Auto Accept (v1.0.3)** | `terminal.accept` 사용 (**오류**: 실제는 `terminalCommand.accept`) |
 | [Ricco6/always-accept-antigravity](https://github.com/Ricco6/always-accept-antigravity) | Auto Proceed Extension | 명령어 참조 |
 
 ---
@@ -167,3 +167,10 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 - **Auto-Accept 전면 개편**: CDP 제거, pesosz 방식(VS Code 내부 명령어 직접 호출) 적용
 - **Boost 런처 수정**: `--remote-debugging-port` 옵션 제거 (계정 전환 세션 고착 문제 해결)
 - **Dead Code 제거**: OOB OAuth, CDP 관련 코드 삭제
+
+### v6.7.1 (2026-02-13)
+- **Accept All 명령어 수정**: pesosz 확장의 `antigravity.terminal.accept`는 실제 존재하지 않는 명령어
+  - 올바른 명령어: `antigravity.terminalCommand.accept` (Antigravity 내장 확장 `package.json` 직접 확인)
+- **`terminalCommand.run` 제거**: 승인이 아닌 실행 명령이라 자동 호출 위험
+- **자동 시작 제거**: 사용자 수동 토글로 변경
+- **폴링 최적화**: 500ms→1000ms, await→비차단 `.then()`
