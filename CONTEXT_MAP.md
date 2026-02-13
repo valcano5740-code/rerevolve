@@ -172,5 +172,7 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 - **Accept All 명령어 수정**: pesosz 확장의 `antigravity.terminal.accept`는 실제 존재하지 않는 명령어
   - 올바른 명령어: `antigravity.terminalCommand.accept` (Antigravity 내장 확장 `package.json` 직접 확인)
 - **`terminalCommand.run` 제거**: 승인이 아닌 실행 명령이라 자동 호출 위험
-- **자동 시작 제거**: 사용자 수동 토글로 변경
+- **ON/OFF 상태 저장**: `globalState`로 Auto-Accept 상태 유지 (재시작해도 복원)
+- **알림 팝업 제거**: `showInformationMessage` 제거 (토글 시 불필요한 팝업 방지)
 - **폴링 최적화**: 500ms→1000ms, await→비차단 `.then()`
+- ⚠️ **VSIX 빌드 주의**: `--no-dependencies` 사용 금지 (node_modules 누락 → 416KB로 축소되어 확장 로딩 실패)
