@@ -20,9 +20,12 @@ const ACCEPT_COMMANDS = [
     'antigravity.command.accept',            // 일반 명령 승인 (ctrl+enter)
 ];
 
+const STATE_KEY = 'autoAcceptEnabled';
+
 export class AutoAcceptService implements vscode.Disposable {
     private _enabled = false;
     private pollTimer: NodeJS.Timeout | null = null;
+    private globalState: vscode.Memento;
     
     // 상태 변경 이벤트
     private readonly _onStatusChange = new vscode.EventEmitter<boolean>();
@@ -32,6 +35,10 @@ export class AutoAcceptService implements vscode.Disposable {
     private stats = {
         acceptedSteps: 0,
     };
+
+    constructor(globalState: vscode.Memento) {
+        this.globalState = globalState;
+    }
 
     get isEnabled(): boolean {
         return this._enabled;
@@ -46,6 +53,7 @@ export class AutoAcceptService implements vscode.Disposable {
         
         this._enabled = true;
         this._onStatusChange.fire(true);
+        this.globalState.update(STATE_KEY, true);
         
         // 1초 인터벌 (500ms는 너무 공격적 → 프리징 유발)
         this.pollTimer = setInterval(() => {
@@ -64,6 +72,7 @@ export class AutoAcceptService implements vscode.Disposable {
         
         this._enabled = false;
         this._onStatusChange.fire(false);
+        this.globalState.update(STATE_KEY, false);
         
         if (this.pollTimer) {
             clearInterval(this.pollTimer);
@@ -83,6 +92,16 @@ export class AutoAcceptService implements vscode.Disposable {
             this.start();
         }
         return this._enabled;
+    }
+
+    /**
+     * 저장된 상태 복원 (확장 시작 시 호출)
+     */
+    restoreState(): void {
+        const saved = this.globalState.get<boolean>(STATE_KEY, false);
+        if (saved) {
+            this.start();
+        }
     }
 
     /**

@@ -90,7 +90,7 @@ export function activate(context: vscode.ExtensionContext) {
     accountManager = new AccountManager(context);
     tokenService = new TokenService(context.globalState);
     quotaService = new QuotaService();
-    autoAcceptService = new AutoAcceptService();
+    autoAcceptService = new AutoAcceptService(context.globalState);
     accountSwitcher = new AccountSwitcher(context);
 
     // Status Bar 아이템 생성 (우측 우선순위 높게 배치)
@@ -251,7 +251,8 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota();
     }, 60000);
 
-    // Auto-Accept는 사용자가 사이드바에서 수동 토글 (자동 시작 시 프리징 유발)
+    // Auto-Accept 저장된 상태 복원 (ON이었으면 자동 재시작)
+    setTimeout(() => autoAcceptService.restoreState(), 3000);
 }
 
 export function deactivate() {
