@@ -36,7 +36,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const globalStoragePath = vscode.Uri.joinPath(extensionUri, '..', '..', '.rerevolve-cache').fsPath;
         this.quotaCachePath = path.join(globalStoragePath, 'quotas.json');
         this.loadQuotaCache();
-        this.watchQuotaCache();  // 다중 창 동기화 감시 시작
+        // watchQuotaCache는 resolveWebviewView에서 지연 초기화 (생성자 안전성 보장)
     }
 
     /**
@@ -69,6 +69,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         token: vscode.CancellationToken
     ): void {
         this._view = webviewView;
+
+        // 다중 창 동기화 감시 시작 (webview 준비 후 지연 초기화)
+        if (!this.cacheWatcher) {
+            this.watchQuotaCache();
+        }
 
         webviewView.webview.options = {
             enableScripts: true,
