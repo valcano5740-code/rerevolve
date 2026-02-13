@@ -187,4 +187,8 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
   - `QuotaResult.claudeResetTimeRaw` (원본 ISO 시간) 추가
   - 사이드바: 현재시간 기준 남은 시간 실시간 계산, 리셋 경과 시 '✅ 충전됨!' 표시
   - 상태바: 5초마다 로컬 시간 비교 (API 호출 없음, 자원 소모 제로)
+- **다중 창 쿼터 동기화**
+  - `quotas.json` 파일 감시 (`fs.watch`) → 다른 창 갱신 시 1초 내 자동 반영
+  - `refreshAccount`에서 30초 내 갱신 데이터 API 스킵 (중복 호출 방지)
+  - `savingNow` 플래그로 자기 저장 시 감시 무시
 

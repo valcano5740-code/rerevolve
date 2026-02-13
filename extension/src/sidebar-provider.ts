@@ -21,6 +21,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private quotaCachePath: string;
     private activityLogs: { time: string; message: string; type: 'info' | 'success' | 'error' }[] = [];
     private static readonly MAX_LOGS = 50;
+    private savingNow = false;  // 자기 자신의 저장 시 감시 무시용
+    private cacheWatcher?: fs.FSWatcher;
 
     constructor(
         private readonly extensionUri: vscode.Uri,
@@ -34,6 +36,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const globalStoragePath = vscode.Uri.joinPath(extensionUri, '..', '..', '.rerevolve-cache').fsPath;
         this.quotaCachePath = path.join(globalStoragePath, 'quotas.json');
         this.loadQuotaCache();
+        this.watchQuotaCache();  // 다중 창 동기화 감시 시작
     }
 
     /**
@@ -416,6 +419,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        // 다중 창 동기화: 다른 창이 30초 내 갱신했으면 API 스킵
+        const cached = this.quotaCache[email];
+        if (cached && cached.lastUpdated) {
+            const age = Date.now() - new Date(cached.lastUpdated).getTime();
+            if (age < 30000 && !cached.error) {
+                this.addLog(`⚡ ${email} 최근 갱신 데이터 사용 (${Math.round(age/1000)}초 전)`, 'info');
+                return;
+            }
+        }
+
         const token = await this.tokenService.getToken(email);
         if (!token) {
             this.addLog(`🔑 ${email} 토큰 없음`, 'error');
@@ -525,9 +538,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             if (!fs.existsSync(dir)) {
                 fs.mkdirSync(dir, { recursive: true });
             }
+            this.savingNow = true;  // 자기 저장 플래그
             fs.writeFileSync(this.quotaCachePath, JSON.stringify(this.quotaCache, null, 2));
+            setTimeout(() => { this.savingNow = false; }, 500);  // 500ms 후 해제
         } catch (err) {
+            this.savingNow = false;
             console.error('ReRevolve: Failed to save quota cache', err);
+        }
+    }
+
+    /**
+     * quotas.json 파일 변경 감시 (다중 창 동기화)
+     * 다른 창이 쿼터를 갱신하면 자동으로 반영
+     */
+    private watchQuotaCache(): void {
+        try {
+            const dir = path.dirname(this.quotaCachePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            // 파일이 없으면 빈 파일 생성
+            if (!fs.existsSync(this.quotaCachePath)) {
+                fs.writeFileSync(this.quotaCachePath, '{}');
+            }
+
+            let debounceTimer: NodeJS.Timeout | null = null;
+            this.cacheWatcher = fs.watch(this.quotaCachePath, () => {
+                if (this.savingNow) return;  // 자기 자신의 저장 무시
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    console.log('ReRevolve: 다른 창에서 쿼터 갱신 감지 → 동기화');
+                    this.loadQuotaCache();
+                    this.sendDataToWebview();
+                    this.refresh();
+                }, 1000);  // 1초 디바운스
+            });
+            console.log('ReRevolve: quotas.json 감시 시작 (다중 창 동기화)');
+        } catch (err) {
+            console.error('ReRevolve: quotas.json 감시 실패', err);
         }
     }
 
