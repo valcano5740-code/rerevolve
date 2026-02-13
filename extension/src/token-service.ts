@@ -96,9 +96,16 @@ export class TokenService {
     }
 
     /**
-     * state.vscdb 경로 가져오기
+     * Language Server 캐시 무효화 (계정 전환 시 즉시 재감지용)
      */
-    private getStateDbPath(): string {
+    invalidateCache(): void {
+        this.lsClient.invalidateCache();
+    }
+
+    /**
+     * state.vscdb 경로 가져오기 (파일 감시용 public)
+     */
+    getStateDbPath(): string {
         const homeDir = os.homedir();
         if (process.platform === 'win32') {
             const appData = process.env.APPDATA || path.join(homeDir, 'AppData', 'Roaming');

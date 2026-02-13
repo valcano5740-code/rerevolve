@@ -31,7 +31,7 @@ interface UserStatusResponse {
 export class LanguageServerClient {
     private serverInfo: LanguageServerInfo | null = null;
     private lastDetectTime: number = 0;
-    private readonly DETECT_CACHE_MS = 30000; // 30초 캐시
+    private readonly DETECT_CACHE_MS = 5000;   // 5초 캐시 (계정 전환 빠른 감지)
     private readonly MAX_RETRIES = 3;
     private readonly RETRY_DELAY_MS = 1000;
 

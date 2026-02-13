@@ -246,10 +246,33 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota(); // 상태바도 갱신
     }, 2000);
 
-    // 쿼터 상태바 60초마다 자동 갱신
+    // 쿼터 상태바 15초마다 자동 갱신 (계정 전환 빠른 감지)
     setInterval(async () => {
         await refreshActiveQuota();
-    }, 60000);
+    }, 15000);
+
+    // state.vscdb 파일 변경 감시 → 계정 전환 즉시 감지
+    try {
+        const dbPath = tokenService.getStateDbPath();
+        const fs = require('fs');
+        if (fs.existsSync(dbPath)) {
+            let debounceTimer: NodeJS.Timeout | null = null;
+            const watcher = fs.watch(dbPath, () => {
+                // 파일 변경이 빠르게 여러 번 발생하므로 2초 디바운스
+                if (debounceTimer) clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(async () => {
+                    console.log('ReRevolve: state.vscdb 변경 감지 → 활성 계정 재감지');
+                    tokenService.invalidateCache(); // LS 캐시 무효화
+                    await sidebarProvider.refreshActiveOnly();
+                    await refreshActiveQuota();
+                }, 2000);
+            });
+            context.subscriptions.push({ dispose: () => watcher.close() });
+            console.log('ReRevolve: state.vscdb 파일 감시 시작');
+        }
+    } catch (err) {
+        console.error('ReRevolve: state.vscdb 감시 실패', err);
+    }
 
     // Auto-Accept 저장된 상태 복원 (ON이었으면 자동 재시작)
     setTimeout(() => autoAcceptService.restoreState(), 3000);

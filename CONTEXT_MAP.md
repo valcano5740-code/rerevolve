@@ -176,3 +176,11 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 - **알림 팝업 제거**: `showInformationMessage` 제거 (토글 시 불필요한 팝업 방지)
 - **폴링 최적화**: 500ms→1000ms, await→비차단 `.then()`
 - ⚠️ **VSIX 빌드 주의**: `--no-dependencies` 사용 금지 (node_modules 누락 → 416KB로 축소되어 확장 로딩 실패)
+
+### v6.7.2 (2026-02-13)
+- **활성 계정 실시간 감지 개선**
+  - LS 캐시 30s → 5s (계정 전환 후 빠르게 재감지)
+  - 쿼터 자동 갱신 60s → 15s
+  - `state.vscdb` 파일 변경 감시 (`fs.watch`) → 계정 전환 2초 내 즉시 감지
+  - `TokenService.invalidateCache()` 추가 (LS 캐시 즉시 무효화)
+
