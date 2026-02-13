@@ -251,13 +251,7 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota();
     }, 60000);
 
-    // Auto-Accept 자동 활성화 (pesosz 방식 - CDP 불필요)
-    setTimeout(() => {
-        console.log('ReRevolve: Auto-Accept 자동 활성화');
-        if (!autoAcceptService.isEnabled) {
-            autoAcceptService.start();
-        }
-    }, 3000); // 3초 후 시작
+    // Auto-Accept는 사용자가 사이드바에서 수동 토글 (자동 시작 시 프리징 유발)
 }
 
 export function deactivate() {

@@ -12,10 +12,12 @@
 
 import * as vscode from 'vscode';
 
-// Antigravity 내부 Accept 명령어 (pesosz v1.0.3 기준)
+// Antigravity 내부 Accept 명령어 (extensions/antigravity/package.json 검증 완료)
+// ⚠️ terminalCommand.run은 "실행" 명령이라 자동 호출 금지
 const ACCEPT_COMMANDS = [
-    'antigravity.agent.acceptAgentStep',   // 에이전트 스텝 승인 (Accept All 포함)
-    'antigravity.terminal.accept',          // 터미널 명령 승인
+    'antigravity.agent.acceptAgentStep',     // 에이전트 스텝 승인 (Accept All)
+    'antigravity.terminalCommand.accept',    // 터미널 명령 승인 (alt+enter)
+    'antigravity.command.accept',            // 일반 명령 승인 (ctrl+enter)
 ];
 
 export class AutoAcceptService implements vscode.Disposable {
@@ -45,14 +47,13 @@ export class AutoAcceptService implements vscode.Disposable {
         this._enabled = true;
         this._onStatusChange.fire(true);
         
-        // pesosz 방식: 500ms 인터벌로 Accept 명령어 실행
-        this.pollTimer = setInterval(async () => {
+        // 1초 인터벌 (500ms는 너무 공격적 → 프리징 유발)
+        this.pollTimer = setInterval(() => {
             if (!this._enabled) return;
-            await this.poll();
-        }, 500);
+            this.poll(); // 비차단: await 안 함
+        }, 1000);
         
-        console.log('ReRevolve: Auto-Accept 활성화 🚀 (내부 명령어 방식)');
-        vscode.window.showInformationMessage('🚀 Auto-Accept 활성화!');
+        console.log('ReRevolve: Auto-Accept 활성화 (내부 명령어 방식)');
     }
 
     /**
@@ -70,7 +71,6 @@ export class AutoAcceptService implements vscode.Disposable {
         }
         
         console.log('ReRevolve: Auto-Accept 비활성화');
-        vscode.window.showInformationMessage('⏹️ Auto-Accept 비활성화');
     }
 
     /**
@@ -89,13 +89,13 @@ export class AutoAcceptService implements vscode.Disposable {
      * 폴링 - Accept 명령어 실행
      * pesosz 방식: 명령어가 없으면 조용히 실패 (에러 무시)
      */
-    private async poll(): Promise<void> {
+    private poll(): void {
+        // 각 명령어를 비차단으로 실행 (프리징 방지)
         for (const cmd of ACCEPT_COMMANDS) {
-            try {
-                await vscode.commands.executeCommand(cmd);
-            } catch {
-                // 승인할 것이 없으면 조용히 무시
-            }
+            vscode.commands.executeCommand(cmd).then(
+                () => {},
+                () => {} // 승인할 것이 없으면 조용히 무시
+            );
         }
     }
 
