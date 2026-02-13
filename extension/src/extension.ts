@@ -49,6 +49,10 @@ function getMoonPhase(percent: number): string {
 /**
  * 쿼터 상태바 업데이트 (활성 계정 Claude 쿼터) - 달 모양 스타일
  */
+let lastQuotaResult: QuotaResult | null = null;  // 마지막 쿼터 결과 저장 (재충전 감지용)
+let lastQuotaEmail: string | null = null;
+let rechargeNotified = false;  // 충전 완료 예상 알림 중복 방지
+
 function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): void {
     if (!email || !quota) {
         quotaStatusBarItem.text = '🌑 Claude: --';
@@ -56,6 +60,11 @@ function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): 
         quotaStatusBarItem.backgroundColor = undefined;
         return;
     }
+
+    // 쿼터 결과 저장 (재충전 감지용)
+    lastQuotaResult = quota;
+    lastQuotaEmail = email;
+    rechargeNotified = false;  // 새 쿼터 조회 시 알림 상태 춨기화
 
     // -1은 쿼터 조회 실패 시 표시, 이 경우 '--'로 표시
     const percent = quota.claudeRemaining < 0 ? -1 : Math.round(quota.claudeRemaining);
@@ -81,6 +90,31 @@ function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): 
 
     quotaStatusBarItem.text = `${moon} ${shortEmail}: ${percent}%`;
     quotaStatusBarItem.tooltip = `${email}\nClaude 쿼터: ${percent}%\n리셋: ${quota.claudeResetTime || '정보 없음'}\n클릭하여 새로고침`;
+}
+
+/**
+ * 재충전 예정시간 로컬 체크 (API 호출 없이 시간 비교만)
+ * 리셋 시간이 지났으면 상태바에 '충전 완료 예상' 표시
+ */
+function checkRechargeLocal(): void {
+    if (!lastQuotaResult || !lastQuotaEmail || rechargeNotified) return;
+    if (!lastQuotaResult.claudeResetTimeRaw) return;
+    if (lastQuotaResult.claudeRemaining > 50) return;  // 충분하면 체크 불필요
+
+    try {
+        const resetTime = new Date(lastQuotaResult.claudeResetTimeRaw).getTime();
+        if (Date.now() > resetTime) {
+            // 리셋 시간이 지났음 → 충전 완료 예상 표시
+            const shortEmail = lastQuotaEmail.split('@')[0];
+            quotaStatusBarItem.text = `🔄 ${shortEmail}: 충전됨`;
+            quotaStatusBarItem.tooltip = `${lastQuotaEmail}\n재충전 예정시간이 지났습니다\n클릭하여 실제 쿼터 확인`;
+            quotaStatusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+            rechargeNotified = true;  // 중복 알림 방지
+            console.log(`ReRevolve: ${lastQuotaEmail} 충전 완료 예상 (리셋시간 경과)`);
+        }
+    } catch {
+        // 날짜 파싱 실패 무시
+    }
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -250,6 +284,11 @@ export function activate(context: vscode.ExtensionContext) {
     setInterval(async () => {
         await refreshActiveQuota();
     }, 15000);
+
+    // 재충전 로컬 체크 5초마다 (API 호출 없이 시간 비교만)
+    setInterval(() => {
+        checkRechargeLocal();
+    }, 5000);
 
     // state.vscdb 파일 변경 감시 → 계정 전환 즉시 감지
     try {

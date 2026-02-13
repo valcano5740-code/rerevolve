@@ -1387,12 +1387,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 const quota = account.quota;
                 const remaining = quota?.claudeRemaining ?? -1;
                 const resetTimeRaw = quota?.claudeResetTime || '';
+                const resetTimeISO = quota?.claudeResetTimeRaw || '';  // 원본 ISO 시간
                 
-                // 예상 충전 시간 계산 (갱신 시점 + 남은 충전 시간)
+                // 재충전 예정 및 남은 시간 계산 (원본 ISO 시간 기반 - 현재시간과 직접 비교)
                 let resetDisplay = '정보 없음';
-                if (quota?.lastUpdated && resetTimeRaw) {
+                let resetTimeDisplay = resetTimeRaw || '정보 없음';
+                
+                if (resetTimeISO) {
+                    const resetDate = new Date(resetTimeISO);
+                    const now = new Date();
+                    const diff = resetDate.getTime() - now.getTime();
+                    
+                    // 재충전 예정 날짜 표시
+                    const month = resetDate.getMonth() + 1;
+                    const day = resetDate.getDate();
+                    const h = resetDate.getHours();
+                    const m = String(resetDate.getMinutes()).padStart(2, '0');
+                    const ampm = h >= 12 ? '오후' : '오전';
+                    const hour12 = h % 12 || 12;
+                    resetDisplay = month + '/' + day + ' ' + ampm + ' ' + hour12 + ':' + m;
+                    
+                    if (diff <= 0) {
+                        // 리셋 시간이 지남 → 충전 완료
+                        resetTimeDisplay = '✅ 충전됨!';
+                    } else {
+                        // 현재시간 기준 남은 시간 계산
+                        const totalMin = Math.ceil(diff / 60000);
+                        if (totalMin < 60) {
+                            resetTimeDisplay = totalMin + '분';
+                        } else {
+                            const hrs = Math.floor(totalMin / 60);
+                            if (hrs < 24) {
+                                resetTimeDisplay = hrs + '시간 ' + (totalMin % 60) + '분';
+                            } else {
+                                const d = Math.floor(hrs / 24);
+                                resetTimeDisplay = d + '일 ' + (hrs % 24) + '시간';
+                            }
+                        }
+                    }
+                } else if (quota?.lastUpdated && resetTimeRaw) {
+                    // fallback: ISO 시간 없으면 기존 방식 (갱신시간 + 남은시간)
                     const lastUpdatedDate = new Date(quota.lastUpdated);
-                    // resetTimeRaw는 "7일 0시간", "4시간 58분" 같은 형태
                     const dayMatch = resetTimeRaw.match(/(\\d+)일/);
                     const hourMatch = resetTimeRaw.match(/(\\d+)시간/);
                     const minuteMatch = resetTimeRaw.match(/(\\d+)분/);

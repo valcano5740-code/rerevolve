@@ -183,4 +183,8 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
   - 쿼터 자동 갱신 60s → 15s
   - `state.vscdb` 파일 변경 감시 (`fs.watch`) → 계정 전환 2초 내 즉시 감지
   - `TokenService.invalidateCache()` 추가 (LS 캐시 즉시 무효화)
+- **재충전 완료 실시간 감지**
+  - `QuotaResult.claudeResetTimeRaw` (원본 ISO 시간) 추가
+  - 사이드바: 현재시간 기준 남은 시간 실시간 계산, 리셋 경과 시 '✅ 충전됨!' 표시
+  - 상태바: 5초마다 로컬 시간 비교 (API 호출 없음, 자원 소모 제로)
 

@@ -14,6 +14,7 @@ export interface QuotaResult {
     isPaidAccount: boolean;
     claudeRemaining: number;
     claudeResetTime: string | null;
+    claudeResetTimeRaw: string | null;  // 원본 ISO 시간 (실시간 비교용)
     geminiProRemaining: number;
     geminiFlashRemaining: number;
     models: ModelQuota[];
@@ -187,6 +188,7 @@ export class QuotaService {
             isPaidAccount,
             claudeRemaining,
             claudeResetTime: this.formatResetTime(claudeResetTime),
+            claudeResetTimeRaw: claudeResetTime,  // 원본 ISO 시간 보관
             geminiProRemaining: groupStats['Gemini Pro']?.min ?? 100,
             geminiFlashRemaining: groupStats['Gemini Flash']?.min ?? 100,
             models,
@@ -248,6 +250,7 @@ export class QuotaService {
             isPaidAccount: false,
             claudeRemaining: -1,
             claudeResetTime: null,
+            claudeResetTimeRaw: null,
             geminiProRemaining: -1,
             geminiFlashRemaining: -1,
             models: [],
