@@ -1,0 +1,10 @@
+62846c8 fix(v6.7.3): 계정 표시 오류 수정 - watchQuotaCache setTimeout 분리
+cda49c4 fix: watchQuotaCache 지연 초기화 (계정 표시 오류 수정)
+7af7041 feat: 다중 창 쿼터 동기화 + 재충전 완료 감지 (v6.7.2)
+a12acbd feat: 재충전 완료 실시간 감지 (v6.7.2)
+92a14b6 feat: 활성 계정 실시간 감지 개선 (v6.7.2) - LS 캐시 30s→5s, 쿼터 갱신 60s→15s - state.vscdb 파일 변경 감시 (fs.watch) 추가 - TokenService.invalidateCache() 추가
+0a1b257 docs: v6.7.1 CONTEXT_MAP 업데이트 (globalState 저장, VSIX 빌드 주의사항)
+059d343 feat: Auto-Accept ON/OFF 상태 globalState 저장 (재시작해도 유지)
+41612c7 docs: v6.7.1 CONTEXT_MAP.md 업데이트
+320ccff fix: Accept All 명령어 수정 (v6.7.1) - terminal.accept → terminalCommand.accept (실제 Antigravity 명령어로 수정) - terminalCommand.run 제거 (승인 아닌 실행 명령어) - 자동시작 제거 / 알림 팝업 제거 - 폴링 1000ms 비차단 실행
+5dba8c0 docs: v6.7.0 CONTEXT_MAP.md 업데이트 (Auto-Accept 개편 및 Boost 런처 수정 기록)

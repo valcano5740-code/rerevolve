@@ -1,0 +1,147 @@
+diff --git a/extension/src/sidebar-provider.ts b/extension/src/sidebar-provider.ts
+index 73e26f7..a14cf10 100644
+--- a/extension/src/sidebar-provider.ts
++++ b/extension/src/sidebar-provider.ts
+@@ -21,6 +21,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
+     private quotaCachePath: string;
+     private activityLogs: { time: string; message: string; type: 'info' | 'success' | 'error' }[] = [];
+     private static readonly MAX_LOGS = 50;
++    private savingNow = false;  // 자기 자신의 저장 시 감시 무시용
++    private cacheWatcher?: fs.FSWatcher;
+ 
+     constructor(
+         private readonly extensionUri: vscode.Uri,
+@@ -34,6 +36,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
+         const globalStoragePath = vscode.Uri.joinPath(extensionUri, '..', '..', '.rerevolve-cache').fsPath;
+         this.quotaCachePath = path.join(globalStoragePath, 'quotas.json');
+         this.loadQuotaCache();
++
++        // 다중 창 동기화: 5초 후 안전하게 시작 (확장 초기화 완료 보장)
++        setTimeout(() => {
++            try {
++                if (!this.cacheWatcher) {
++                    this.watchQuotaCache();
++                }
++            } catch (err) {
++                console.error('ReRevolve: watchQuotaCache 초기화 실패 (무시)', err);
++            }
++        }, 5000);
+     }
+ 
+     /**
+@@ -416,6 +429,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
+             return;
+         }
+ 
++        // 다중 창 동기화: 다른 창이 30초 내 갱신했으면 API 스킵
++        const cached = this.quotaCache[email];
++        if (cached && cached.lastUpdated) {
++            const age = Date.now() - new Date(cached.lastUpdated).getTime();
++            if (age < 30000 && !cached.error) {
++                this.addLog(`⚡ ${email} 최근 갱신 데이터 사용 (${Math.round(age/1000)}초 전)`, 'info');
++                return;
++            }
++        }
++
+         const token = await this.tokenService.getToken(email);
+         if (!token) {
+             this.addLog(`🔑 ${email} 토큰 없음`, 'error');
+@@ -525,12 +548,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
+             if (!fs.existsSync(dir)) {
+                 fs.mkdirSync(dir, { recursive: true });
+             }
++            this.savingNow = true;  // 자기 저장 플래그
+             fs.writeFileSync(this.quotaCachePath, JSON.stringify(this.quotaCache, null, 2));
++            setTimeout(() => { this.savingNow = false; }, 500);  // 500ms 후 해제
+         } catch (err) {
++            this.savingNow = false;
+             console.error('ReRevolve: Failed to save quota cache', err);
+         }
+     }
+ 
++    /**
++     * quotas.json 파일 변경 감시 (다중 창 동기화)
++     * 다른 창이 쿼터를 갱신하면 자동으로 반영
++     */
++    private watchQuotaCache(): void {
++        try {
++            const dir = path.dirname(this.quotaCachePath);
++            if (!fs.existsSync(dir)) {
++                fs.mkdirSync(dir, { recursive: true });
++            }
++            // 파일이 없으면 빈 파일 생성
++            if (!fs.existsSync(this.quotaCachePath)) {
++                fs.writeFileSync(this.quotaCachePath, '{}');
++            }
++
++            let debounceTimer: NodeJS.Timeout | null = null;
++            this.cacheWatcher = fs.watch(this.quotaCachePath, () => {
++                if (this.savingNow) return;  // 자기 자신의 저장 무시
++                if (debounceTimer) clearTimeout(debounceTimer);
++                debounceTimer = setTimeout(() => {
++                    console.log('ReRevolve: 다른 창에서 쿼터 갱신 감지 → 동기화');
++                    this.loadQuotaCache();
++                    this.sendDataToWebview();
++                    this.refresh();
++                }, 1000);  // 1초 디바운스
++            });
++            console.log('ReRevolve: quotas.json 감시 시작 (다중 창 동기화)');
++        } catch (err) {
++            console.error('ReRevolve: quotas.json 감시 실패', err);
++        }
++    }
++
+     private getHtmlContent(): string {
+         // package.json에서 버전 동적 읽기
+         const packageJsonPath = path.join(this.extensionUri.fsPath, 'package.json');
+@@ -1387,12 +1445,47 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
+                 const quota = account.quota;
+                 const remaining = quota?.claudeRemaining ?? -1;
+                 const resetTimeRaw = quota?.claudeResetTime || '';
++                const resetTimeISO = quota?.claudeResetTimeRaw || '';  // 원본 ISO 시간
+                 
+-                // 예상 충전 시간 계산 (갱신 시점 + 남은 충전 시간)
++                // 재충전 예정 및 남은 시간 계산 (원본 ISO 시간 기반 - 현재시간과 직접 비교)
+                 let resetDisplay = '정보 없음';
+-                if (quota?.lastUpdated && resetTimeRaw) {
++                let resetTimeDisplay = resetTimeRaw || '정보 없음';
++                
++                if (resetTimeISO) {
++                    const resetDate = new Date(resetTimeISO);
++                    const now = new Date();
++                    const diff = resetDate.getTime() - now.getTime();
++                    
++                    // 재충전 예정 날짜 표시
++                    const month = resetDate.getMonth() + 1;
++                    const day = resetDate.getDate();
++                    const h = resetDate.getHours();
++                    const m = String(resetDate.getMinutes()).padStart(2, '0');
++                    const ampm = h >= 12 ? '오후' : '오전';
++                    const hour12 = h % 12 || 12;
++                    resetDisplay = month + '/' + day + ' ' + ampm + ' ' + hour12 + ':' + m;
++                    
++                    if (diff <= 0) {
++                        // 리셋 시간이 지남 → 충전 완료
++                        resetTimeDisplay = '✅ 충전됨!';
++                    } else {
++                        // 현재시간 기준 남은 시간 계산
++                        const totalMin = Math.ceil(diff / 60000);
++                        if (totalMin < 60) {
++                            resetTimeDisplay = totalMin + '분';
++                        } else {
++                            const hrs = Math.floor(totalMin / 60);
++                            if (hrs < 24) {
++                                resetTimeDisplay = hrs + '시간 ' + (totalMin % 60) + '분';
++                            } else {
++                                const d = Math.floor(hrs / 24);
++                                resetTimeDisplay = d + '일 ' + (hrs % 24) + '시간';
++                            }
++                        }
++                    }
++                } else if (quota?.lastUpdated && resetTimeRaw) {
++                    // fallback: ISO 시간 없으면 기존 방식 (갱신시간 + 남은시간)
+                     const lastUpdatedDate = new Date(quota.lastUpdated);
+-                    // resetTimeRaw는 "7일 0시간", "4시간 58분" 같은 형태
+                     const dayMatch = resetTimeRaw.match(/(\\d+)일/);
+                     const hourMatch = resetTimeRaw.match(/(\\d+)시간/);
+                     const minuteMatch = resetTimeRaw.match(/(\\d+)분/);

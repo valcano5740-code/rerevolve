@@ -1531,8 +1531,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 const isLocked = account.refreshLocked;
                 const hasToken = account.hasToken;
 
-                // 남은 시간 표시용
-                const resetTimeDisplay = resetTimeRaw || '정보 없음';
+
 
                 return \`
                     <div class="account-card \${account.isActive ? 'active' : ''} \${isLocked ? 'locked' : ''}" data-email="\${account.email}" draggable="false">
