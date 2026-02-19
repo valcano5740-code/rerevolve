@@ -74,6 +74,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         webviewView.webview.html = this.getHtmlContent();
 
+        // 🔑 webview 로드 직후 기존 데이터 즉시 전송 (빈 화면 방지)
+        setTimeout(() => {
+            this.sendDataToWebview();
+            this.refresh();
+        }, 300);
+
         // 메시지 핸들러
         webviewView.webview.onDidReceiveMessage(async (message) => {
             switch (message.command) {
