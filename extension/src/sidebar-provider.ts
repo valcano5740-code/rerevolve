@@ -42,20 +42,20 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     private addLog(message: string, type: 'info' | 'success' | 'error' = 'info'): void {
         const now = new Date();
         const time = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}:${now.getSeconds().toString().padStart(2, '0')}`;
-        
+
         this.activityLogs.unshift({ time, message, type });
-        
+
         // 최대 개수 제한
         if (this.activityLogs.length > SidebarProvider.MAX_LOGS) {
             this.activityLogs = this.activityLogs.slice(0, SidebarProvider.MAX_LOGS);
         }
-        
+
         // 웹뷰로 로그 전송
-        this._view?.webview.postMessage({ 
-            command: 'updateLogs', 
-            logs: this.activityLogs 
+        this._view?.webview.postMessage({
+            command: 'updateLogs',
+            logs: this.activityLogs
         });
-        
+
         // 콘솔에도 출력
         console.log(`ReRevolve: ${message}`);
     }
@@ -73,12 +73,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         };
 
         webviewView.webview.html = this.getHtmlContent();
-
-        // 🔑 webview 로드 직후 기존 데이터 즉시 전송 (빈 화면 방지)
-        setTimeout(() => {
-            this.sendDataToWebview();
-            this.refresh();
-        }, 300);
 
         // 메시지 핸들러
         webviewView.webview.onDidReceiveMessage(async (message) => {
@@ -119,8 +113,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     const account = this.accountManager.getAccount(message.email);
                     if (account) {
                         const newTier = account.tier === 'free' ? 'pro' : 'free';
-                        this.accountManager.updateAccount(message.email, { 
-                            tier: newTier, 
+                        this.accountManager.updateAccount(message.email, {
+                            tier: newTier,
                             isPaid: newTier !== 'free',
                             refreshLocked: newTier === 'free' && !account.isActive
                         });
@@ -159,10 +153,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'toggleAutoAccept':
                     const isEnabled = this.autoAcceptService.toggle();
-                    this._view?.webview.postMessage({ 
-                        command: 'autoAcceptStatus', 
-                        enabled: isEnabled 
+                    this._view?.webview.postMessage({
+                        command: 'autoAcceptStatus',
+                        enabled: isEnabled
                     });
+                    break;
+                case 'setupCDP':
+                    vscode.window.showInformationMessage('CDP 설정은 안정성 모드에서는 사용되지 않습니다.');
+                    break;
+                case 'removeCDP':
+                    vscode.window.showInformationMessage('CDP 제거는 안정성 모드에서는 사용되지 않습니다.');
                     break;
                 case 'openRules':
                     const rulesPath = path.join(process.env.USERPROFILE || '', '.gemini', 'GEMINI.md');
@@ -260,7 +260,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         try {
             const accounts = this.accountManager.getAccounts();
             const tokens: { [email: string]: string } = {};
-            
+
             // 각 계정의 raw credential 수집 (refresh token 포함)
             for (const account of accounts) {
                 const rawCredential = this.tokenService.getRawCredential(account.email);
@@ -268,7 +268,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     tokens[account.email] = rawCredential;
                 }
             }
-            
+
             const exportData = {
                 version: '6.6.0',
                 exportDate: new Date().toISOString(),
@@ -276,12 +276,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 tokens: tokens,
                 quotaCache: this.quotaCache
             };
-            
+
             const uri = await vscode.window.showSaveDialog({
                 defaultUri: vscode.Uri.file('rerevolve-backup.json'),
                 filters: { 'JSON Files': ['json'] }
             });
-            
+
             if (uri) {
                 const fs = require('fs');
                 fs.writeFileSync(uri.fsPath, JSON.stringify(exportData, null, 2));
@@ -302,27 +302,27 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 filters: { 'JSON Files': ['json'] },
                 canSelectMany: false
             });
-            
+
             if (!uri || uri.length === 0) return;
-            
+
             const fs = require('fs');
             const content = fs.readFileSync(uri[0].fsPath, 'utf8');
             const importData = JSON.parse(content);
-            
+
             // 버전 확인
             if (!importData.version || !importData.accounts) {
                 vscode.window.showErrorMessage('유효하지 않은 백업 파일입니다.');
                 return;
             }
-            
+
             const confirm = await vscode.window.showWarningMessage(
                 `${importData.accounts.length}개의 계정을 가져오시겠습니까? 기존 데이터가 덮어쓰여집니다.`,
                 '가져오기',
                 '취소'
             );
-            
+
             if (confirm !== '가져오기') return;
-            
+
             // 계정 가져오기
             for (const account of importData.accounts) {
                 this.accountManager.addAccount(account.email, account.name, account.tier);
@@ -330,14 +330,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     this.quotaCache[account.email] = account.quota;
                 }
             }
-            
+
             // 토큰 가져오기
             if (importData.tokens) {
                 for (const [email, token] of Object.entries(importData.tokens)) {
                     await this.tokenService.saveToken(email, token as string);
                 }
             }
-            
+
             this.saveQuotaCache();
             this.refresh();
             vscode.window.showInformationMessage(`${importData.accounts.length}개의 계정을 가져왔습니다.`);
@@ -348,11 +348,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
     async refreshAll(): Promise<void> {
         this.addLog('🚀 전체 새로고침 시작', 'info');
-        
+
         const accounts = this.accountManager.getAccounts();
         const activeCount = accounts.filter(a => !a.refreshLocked).length;
         this.addLog(`📋 ${accounts.length}개 계정 (활성: ${activeCount}개)`, 'info');
-        
+
         // 현재 로그인된 이메일 감지하여 활성 계정 설정
         const currentEmail = await this.tokenService.getCurrentLoggedInEmail();
         if (currentEmail) {
@@ -362,7 +362,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 this.addLog(`👤 활성 계정: ${currentEmail}`, 'success');
             }
         }
-        
+
         for (const account of accounts) {
             // 무료 비활성화 계정은 새로고침 잠금
             if (account.refreshLocked) {
@@ -390,26 +390,26 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         const accounts = this.accountManager.getAccounts();
         const matchingAccount = accounts.find(a => a.email.toLowerCase() === currentEmail.toLowerCase());
-        
+
         if (matchingAccount) {
             // 활성 계정 업데이트
             this.accountManager.setActiveAccount(currentEmail);
-            
+
             // 해당 계정만 갱신
             if (!matchingAccount.refreshLocked) {
                 await this.refreshAccount(currentEmail);
             }
         }
-        
+
         this.refresh();
-        
+
         // 상태바도 즉시 갱신
         vscode.commands.executeCommand('rerevolve.refreshQuota');
     }
 
     async refreshAccount(email: string): Promise<void> {
         this.addLog(`🔄 ${email} 새로고침 시작`, 'info');
-        
+
         const account = this.accountManager.getAccount(email);
         if (!account) {
             this.addLog(`❌ ${email} 계정 없음`, 'error');
@@ -430,13 +430,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this.addLog(`✅ ${email} 토큰 획득`, 'success');
 
         const quota = await this.quotaService.fetchQuota(email, token);
-        
+
         if (quota.error) {
             this.addLog(`⚠️ ${email}: ${quota.error}`, 'error');
         } else {
             this.addLog(`📊 ${email}: Claude ${quota.claudeRemaining}%`, 'success');
         }
-        
+
         // 쿼터 조회 실패 시 이전 캐시 값 유지 (에러가 있고 값이 무효한 경우)
         if (quota.error && quota.claudeRemaining < 0) {
             const oldQuota = this.quotaCache[email];
@@ -447,7 +447,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 return;
             }
         }
-        
+
         this.quotaCache[email] = quota;
 
         // 참고: tier는 사용자가 설정한 값 유지 (API 응답으로 자동 변경하지 않음)
@@ -1177,6 +1177,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 <button id="autoAcceptBtn" class="btn btn-auto-accept" onclick="toggleAutoAccept()" title="Auto-Accept 토글">
                     <span id="autoAcceptIcon">🔴</span> Auto-Accept
                 </button>
+                <div class="dropdown">
+                    <button class="btn btn-pin dropdown-toggle" onclick="toggleCDPMenu(event)" title="CDP 설정">⚙️</button>
+                    <div class="dropdown-menu" id="cdpDropdown">
+                        <button onclick="setupCDP()">🔧 CDP 설정</button>
+                        <button onclick="removeCDP()">🗑️ CDP 제거</button>
+                    </div>
+                </div>
                 <button id="pinBtn" class="btn btn-pin" onclick="togglePin()" title="하단 고정">
                     <span id="pinIcon">📌</span>
                 </button>
@@ -1320,7 +1327,32 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
         }
         
-
+        function toggleCDPMenu(event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('cdpDropdown');
+            dropdown.classList.toggle('show');
+            
+            // 외부 클릭 시 닫기
+            setTimeout(() => {
+                document.addEventListener('click', closeCDPMenu);
+            }, 0);
+        }
+        
+        function closeCDPMenu() {
+            const dropdown = document.getElementById('cdpDropdown');
+            dropdown.classList.remove('show');
+            document.removeEventListener('click', closeCDPMenu);
+        }
+        
+        function setupCDP() {
+            closeCDPMenu();
+            vscode.postMessage({ command: 'setupCDP' });
+        }
+        
+        function removeCDP() {
+            closeCDPMenu();
+            vscode.postMessage({ command: 'removeCDP' });
+        }
         
         // 유틸리티 버튼 핸들러
         function openRules() {

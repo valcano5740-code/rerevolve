@@ -10,6 +10,80 @@ import { TokenService } from './token-service';
 import { QuotaService, QuotaResult } from './quota-service';
 import { AutoAcceptService } from './auto-accept-service';
 import { AccountSwitcher } from './account-switcher';
+import * as fs from 'fs';
+import * as path from 'path';
+
+/** Auto-Accept가 관리하는 설정 키와 ON/OFF 값 */
+const MANAGED_SETTINGS: Record<string, { on: any; off: any }> = {
+    'cached.allowAgentAccessNonWorkspaceFiles': { on: true, off: undefined },
+    'cached.terminalAutoExecutionPolicy': { on: 'autoExecute', off: undefined },
+    'cached.allowCascadeAccessGitignoreFiles': { on: true, off: undefined },
+    'cached.artifactReviewPolicy': { on: 'autoApply', off: undefined },
+    'security.workspace.trust.untrustedFiles': { on: 'open', off: undefined }
+};
+
+/**
+ * Auto-Accept ON 시: 설정 주입 + browserAllowlist 생성
+ */
+function applyAutoSettings(): void {
+    try {
+        const config = vscode.workspace.getConfiguration();
+        for (const [key, values] of Object.entries(MANAGED_SETTINGS)) {
+            config.update(key, values.on, vscode.ConfigurationTarget.Global)
+                .then(() => { }, () => { });
+        }
+        console.log('ReRevolve: Auto-settings ON 적용');
+
+        // browserAllowlist.txt 생성 (없을 때만)
+        const userProfile = process.env.USERPROFILE || process.env.HOME || '';
+        const allowlistDir = path.join(userProfile, '.gemini', 'antigravity');
+        const allowlistPath = path.join(allowlistDir, 'browserAllowlist.txt');
+
+        if (!fs.existsSync(allowlistPath)) {
+            if (!fs.existsSync(allowlistDir)) {
+                fs.mkdirSync(allowlistDir, { recursive: true });
+            }
+            fs.writeFileSync(allowlistPath, [
+                'http://127.0.0.1:*/*',
+                'http://localhost:*/*',
+                'https://*/*',
+                'http://*/*'
+            ].join('\n'), 'utf-8');
+            console.log('ReRevolve: browserAllowlist.txt 생성');
+        } else {
+            const existing = fs.readFileSync(allowlistPath, 'utf-8');
+            if (!existing.includes('https://*/*')) {
+                fs.appendFileSync(allowlistPath, '\nhttps://*/*\nhttp://*/*\n', 'utf-8');
+            }
+        }
+    } catch (err) {
+        console.error('ReRevolve: Auto-settings 적용 실패', err);
+    }
+}
+
+/**
+ * Auto-Accept OFF 시: 설정 원복 (undefined = 삭제)
+ */
+function revertAutoSettings(): void {
+    try {
+        const config = vscode.workspace.getConfiguration();
+        for (const [key, values] of Object.entries(MANAGED_SETTINGS)) {
+            config.update(key, values.off, vscode.ConfigurationTarget.Global)
+                .then(() => { }, () => { });
+        }
+        console.log('ReRevolve: Auto-settings OFF 원복');
+
+        // browserAllowlist.txt는 삭제 (OFF 시 브라우저 접근도 수동 허용으로 복귀)
+        const userProfile = process.env.USERPROFILE || process.env.HOME || '';
+        const allowlistPath = path.join(userProfile, '.gemini', 'antigravity', 'browserAllowlist.txt');
+        if (fs.existsSync(allowlistPath)) {
+            fs.unlinkSync(allowlistPath);
+            console.log('ReRevolve: browserAllowlist.txt 삭제');
+        }
+    } catch (err) {
+        console.error('ReRevolve: Auto-settings 원복 실패', err);
+    }
+}
 
 let sidebarProvider: SidebarProvider;
 let autoAcceptService: AutoAcceptService;
@@ -49,10 +123,6 @@ function getMoonPhase(percent: number): string {
 /**
  * 쿼터 상태바 업데이트 (활성 계정 Claude 쿼터) - 달 모양 스타일
  */
-let lastQuotaResult: QuotaResult | null = null;  // 마지막 쿼터 결과 저장 (재충전 감지용)
-let lastQuotaEmail: string | null = null;
-let rechargeNotified = false;  // 충전 완료 예상 알림 중복 방지
-
 function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): void {
     if (!email || !quota) {
         quotaStatusBarItem.text = '🌑 Claude: --';
@@ -61,24 +131,19 @@ function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): 
         return;
     }
 
-    // 쿼터 결과 저장 (재충전 감지용)
-    lastQuotaResult = quota;
-    lastQuotaEmail = email;
-    rechargeNotified = false;  // 새 쿼터 조회 시 알림 상태 춨기화
-
     // -1은 쿼터 조회 실패 시 표시, 이 경우 '--'로 표시
     const percent = quota.claudeRemaining < 0 ? -1 : Math.round(quota.claudeRemaining);
     const shortEmail = email.split('@')[0];
-    
+
     if (percent < 0) {
         quotaStatusBarItem.text = `🔄 ${shortEmail}: --`;
         quotaStatusBarItem.tooltip = `${email}\n쿼터 조회 실패 또는 로딩 중\n클릭하여 새로고침`;
         quotaStatusBarItem.backgroundColor = undefined;
         return;
     }
-    
+
     const moon = getMoonPhase(percent);
-    
+
     // 색상 결정 (20% 이하: 경고, 50% 이하: 주의)
     if (percent <= 20) {
         quotaStatusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.errorBackground');
@@ -92,31 +157,6 @@ function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): 
     quotaStatusBarItem.tooltip = `${email}\nClaude 쿼터: ${percent}%\n리셋: ${quota.claudeResetTime || '정보 없음'}\n클릭하여 새로고침`;
 }
 
-/**
- * 재충전 예정시간 로컬 체크 (API 호출 없이 시간 비교만)
- * 리셋 시간이 지났으면 상태바에 '충전 완료 예상' 표시
- */
-function checkRechargeLocal(): void {
-    if (!lastQuotaResult || !lastQuotaEmail || rechargeNotified) return;
-    if (!lastQuotaResult.claudeResetTimeRaw) return;
-    if (lastQuotaResult.claudeRemaining > 50) return;  // 충분하면 체크 불필요
-
-    try {
-        const resetTime = new Date(lastQuotaResult.claudeResetTimeRaw).getTime();
-        if (Date.now() > resetTime) {
-            // 리셋 시간이 지났음 → 충전 완료 예상 표시
-            const shortEmail = lastQuotaEmail.split('@')[0];
-            quotaStatusBarItem.text = `🔄 ${shortEmail}: 충전됨`;
-            quotaStatusBarItem.tooltip = `${lastQuotaEmail}\n재충전 예정시간이 지났습니다\n클릭하여 실제 쿼터 확인`;
-            quotaStatusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
-            rechargeNotified = true;  // 중복 알림 방지
-            console.log(`ReRevolve: ${lastQuotaEmail} 충전 완료 예상 (리셋시간 경과)`);
-        }
-    } catch {
-        // 날짜 파싱 실패 무시
-    }
-}
-
 export function activate(context: vscode.ExtensionContext) {
     console.log('ReRevolve: 확장 활성화');
 
@@ -124,7 +164,7 @@ export function activate(context: vscode.ExtensionContext) {
     accountManager = new AccountManager(context);
     tokenService = new TokenService(context.globalState);
     quotaService = new QuotaService();
-    autoAcceptService = new AutoAcceptService(context.globalState);
+    autoAcceptService = new AutoAcceptService();
     accountSwitcher = new AccountSwitcher(context);
 
     // Status Bar 아이템 생성 (우측 우선순위 높게 배치)
@@ -147,9 +187,14 @@ export function activate(context: vscode.ExtensionContext) {
     quotaStatusBarItem.show();
     context.subscriptions.push(quotaStatusBarItem);
 
-    // Auto-Accept 상태 변경 시 StatusBar 업데이트
+    // Auto-Accept 상태 변경 시 StatusBar + 설정 연동
     autoAcceptService.onStatusChange((enabled) => {
         updateStatusBarItem(enabled);
+        if (enabled) {
+            applyAutoSettings();
+        } else {
+            revertAutoSettings();
+        }
     });
 
     // 사이드바 등록
@@ -280,41 +325,18 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota(); // 상태바도 갱신
     }, 2000);
 
-    // 쿼터 상태바 15초마다 자동 갱신 (계정 전환 빠른 감지)
+    // 쿼터 상태바 60초마다 자동 갱신
     setInterval(async () => {
         await refreshActiveQuota();
-    }, 15000);
+    }, 60000);
 
-    // 재충전 로컬 체크 5초마다 (API 호출 없이 시간 비교만)
-    setInterval(() => {
-        checkRechargeLocal();
-    }, 5000);
-
-    // state.vscdb 파일 변경 감시 → 계정 전환 즉시 감지
-    try {
-        const dbPath = tokenService.getStateDbPath();
-        const fs = require('fs');
-        if (fs.existsSync(dbPath)) {
-            let debounceTimer: NodeJS.Timeout | null = null;
-            const watcher = fs.watch(dbPath, () => {
-                // 파일 변경이 빠르게 여러 번 발생하므로 2초 디바운스
-                if (debounceTimer) clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(async () => {
-                    console.log('ReRevolve: state.vscdb 변경 감지 → 활성 계정 재감지');
-                    tokenService.invalidateCache(); // LS 캐시 무효화
-                    await sidebarProvider.refreshActiveOnly();
-                    await refreshActiveQuota();
-                }, 2000);
-            });
-            context.subscriptions.push({ dispose: () => watcher.close() });
-            console.log('ReRevolve: state.vscdb 파일 감시 시작');
+    // Auto-Accept 자동 활성화 (안정성 모드)
+    setTimeout(() => {
+        console.log('ReRevolve: Auto-Accept 자동 활성화 시도');
+        if (!autoAcceptService.isEnabled) {
+            autoAcceptService.start();
         }
-    } catch (err) {
-        console.error('ReRevolve: state.vscdb 감시 실패', err);
-    }
-
-    // Auto-Accept 저장된 상태 복원 (ON이었으면 자동 재시작)
-    setTimeout(() => autoAcceptService.restoreState(), 3000);
+    }, 3000); // 3초 후 시도
 }
 
 export function deactivate() {
