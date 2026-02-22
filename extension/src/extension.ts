@@ -10,80 +10,6 @@ import { TokenService } from './token-service';
 import { QuotaService, QuotaResult } from './quota-service';
 import { AutoAcceptService } from './auto-accept-service';
 import { AccountSwitcher } from './account-switcher';
-import * as fs from 'fs';
-import * as path from 'path';
-
-/** Auto-Accept가 관리하는 설정 키와 ON/OFF 값 */
-const MANAGED_SETTINGS: Record<string, { on: any; off: any }> = {
-    'cached.allowAgentAccessNonWorkspaceFiles': { on: true, off: undefined },
-    'cached.terminalAutoExecutionPolicy': { on: 'autoExecute', off: undefined },
-    'cached.allowCascadeAccessGitignoreFiles': { on: true, off: undefined },
-    'cached.artifactReviewPolicy': { on: 'autoApply', off: undefined },
-    'security.workspace.trust.untrustedFiles': { on: 'open', off: undefined }
-};
-
-/**
- * Auto-Accept ON 시: 설정 주입 + browserAllowlist 생성
- */
-function applyAutoSettings(): void {
-    try {
-        const config = vscode.workspace.getConfiguration();
-        for (const [key, values] of Object.entries(MANAGED_SETTINGS)) {
-            config.update(key, values.on, vscode.ConfigurationTarget.Global)
-                .then(() => { }, () => { });
-        }
-        console.log('ReRevolve: Auto-settings ON 적용');
-
-        // browserAllowlist.txt 생성 (없을 때만)
-        const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-        const allowlistDir = path.join(userProfile, '.gemini', 'antigravity');
-        const allowlistPath = path.join(allowlistDir, 'browserAllowlist.txt');
-
-        if (!fs.existsSync(allowlistPath)) {
-            if (!fs.existsSync(allowlistDir)) {
-                fs.mkdirSync(allowlistDir, { recursive: true });
-            }
-            fs.writeFileSync(allowlistPath, [
-                'http://127.0.0.1:*/*',
-                'http://localhost:*/*',
-                'https://*/*',
-                'http://*/*'
-            ].join('\n'), 'utf-8');
-            console.log('ReRevolve: browserAllowlist.txt 생성');
-        } else {
-            const existing = fs.readFileSync(allowlistPath, 'utf-8');
-            if (!existing.includes('https://*/*')) {
-                fs.appendFileSync(allowlistPath, '\nhttps://*/*\nhttp://*/*\n', 'utf-8');
-            }
-        }
-    } catch (err) {
-        console.error('ReRevolve: Auto-settings 적용 실패', err);
-    }
-}
-
-/**
- * Auto-Accept OFF 시: 설정 원복 (undefined = 삭제)
- */
-function revertAutoSettings(): void {
-    try {
-        const config = vscode.workspace.getConfiguration();
-        for (const [key, values] of Object.entries(MANAGED_SETTINGS)) {
-            config.update(key, values.off, vscode.ConfigurationTarget.Global)
-                .then(() => { }, () => { });
-        }
-        console.log('ReRevolve: Auto-settings OFF 원복');
-
-        // browserAllowlist.txt는 삭제 (OFF 시 브라우저 접근도 수동 허용으로 복귀)
-        const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-        const allowlistPath = path.join(userProfile, '.gemini', 'antigravity', 'browserAllowlist.txt');
-        if (fs.existsSync(allowlistPath)) {
-            fs.unlinkSync(allowlistPath);
-            console.log('ReRevolve: browserAllowlist.txt 삭제');
-        }
-    } catch (err) {
-        console.error('ReRevolve: Auto-settings 원복 실패', err);
-    }
-}
 
 let sidebarProvider: SidebarProvider;
 let autoAcceptService: AutoAcceptService;
@@ -164,7 +90,7 @@ export function activate(context: vscode.ExtensionContext) {
     accountManager = new AccountManager(context);
     tokenService = new TokenService(context.globalState);
     quotaService = new QuotaService();
-    autoAcceptService = new AutoAcceptService();
+    autoAcceptService = new AutoAcceptService(context.globalState);
     accountSwitcher = new AccountSwitcher(context);
 
     // Status Bar 아이템 생성 (우측 우선순위 높게 배치)
@@ -187,14 +113,9 @@ export function activate(context: vscode.ExtensionContext) {
     quotaStatusBarItem.show();
     context.subscriptions.push(quotaStatusBarItem);
 
-    // Auto-Accept 상태 변경 시 StatusBar + 설정 연동
+    // Auto-Accept 상태 변경 시 StatusBar 업데이트 (설정 연동은 서비스 내부에서 처리)
     autoAcceptService.onStatusChange((enabled) => {
         updateStatusBarItem(enabled);
-        if (enabled) {
-            applyAutoSettings();
-        } else {
-            revertAutoSettings();
-        }
     });
 
     // 사이드바 등록
@@ -330,13 +251,8 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota();
     }, 60000);
 
-    // Auto-Accept 자동 활성화 (안정성 모드)
-    setTimeout(() => {
-        console.log('ReRevolve: Auto-Accept 자동 활성화 시도');
-        if (!autoAcceptService.isEnabled) {
-            autoAcceptService.start();
-        }
-    }, 3000); // 3초 후 시도
+    // Auto-Accept 상태 복원 (이전 세션에서 ON이었으면 자동 시작)
+    autoAcceptService.restoreState();
 }
 
 export function deactivate() {
