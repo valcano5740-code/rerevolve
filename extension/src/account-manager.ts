@@ -38,17 +38,78 @@ export class AccountManager {
     }
 
     private load(): AccountsData {
-        if (!fs.existsSync(this.dataPath)) {
-            return { accounts: [], lastUpdated: null };
+        const empty: AccountsData = { accounts: [], lastUpdated: null };
+        const bakPath = this.dataPath + '.bak';
+
+        // 1. 메인 파일 읽기 시도
+        if (fs.existsSync(this.dataPath)) {
+            try {
+                const raw = fs.readFileSync(this.dataPath, 'utf-8');
+                const parsed = JSON.parse(raw);
+                if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+                    return parsed;
+                }
+            } catch (err) {
+                console.error('ReRevolve: accounts.json 파싱 실패', err);
+            }
         }
-        try {
-            return JSON.parse(fs.readFileSync(this.dataPath, 'utf-8'));
-        } catch {
-            return { accounts: [], lastUpdated: null };
+
+        // 2. 메인 파일이 없거나 빈 배열이면 → .bak에서 복구
+        if (fs.existsSync(bakPath)) {
+            try {
+                const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+                if (bakData && Array.isArray(bakData.accounts) && bakData.accounts.length > 0) {
+                    console.log(`ReRevolve: 백업에서 ${bakData.accounts.length}개 계정 자동 복구`);
+                    // 메인 파일에 복원
+                    fs.writeFileSync(this.dataPath, JSON.stringify(bakData, null, 2));
+                    return bakData;
+                }
+            } catch {
+                console.error('ReRevolve: 백업 파일도 파싱 실패');
+            }
         }
+
+        return empty;
     }
 
     private save(data: AccountsData): void {
+        const bakPath = this.dataPath + '.bak';
+
+        // 빈 배열 저장 시도 차단: .bak 포함 어디든 계정 데이터가 있으면 절대 빈 배열로 덮어쓰기 않음
+        if (data.accounts.length === 0) {
+            // 메인 파일 체크
+            if (fs.existsSync(this.dataPath)) {
+                try {
+                    const existing = JSON.parse(fs.readFileSync(this.dataPath, 'utf-8'));
+                    if (existing.accounts && existing.accounts.length > 0) {
+                        console.warn(`ReRevolve: ⚠️ 빈 배열 저장 차단 (메인 파일에 ${existing.accounts.length}개 계정 보존)`);
+                        return;
+                    }
+                } catch { /* ignore */ }
+            }
+            // .bak 파일 체크
+            if (fs.existsSync(bakPath)) {
+                try {
+                    const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
+                    if (bakData.accounts && bakData.accounts.length > 0) {
+                        console.warn(`ReRevolve: ⚠️ 빈 배열 저장 차단 (백업에 ${bakData.accounts.length}개 계정 존재)`);
+                        return;
+                    }
+                } catch { /* ignore */ }
+            }
+        }
+
+        // 저장 전 백업 생성 (현재 파일에 계정이 있을 때만)
+        if (fs.existsSync(this.dataPath)) {
+            try {
+                const current = fs.readFileSync(this.dataPath, 'utf-8');
+                const parsed = JSON.parse(current);
+                if (parsed.accounts && parsed.accounts.length > 0) {
+                    fs.writeFileSync(bakPath, current);
+                }
+            } catch { /* ignore */ }
+        }
+
         data.lastUpdated = new Date().toISOString();
         fs.writeFileSync(this.dataPath, JSON.stringify(data, null, 2));
     }

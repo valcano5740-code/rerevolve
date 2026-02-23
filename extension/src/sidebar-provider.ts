@@ -509,7 +509,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }));
 
         // 토큰 상태 비동기 확인
-        Promise.all(accounts.map(a => this.tokenService.hasToken(a.email))).then(hasTokens => {
+        Promise.all(accounts.map(a => this.tokenService.hasToken(a.email).catch(() => false))).then(hasTokens => {
             const dataWithTokens = data.map((d, i) => ({ ...d, hasToken: hasTokens[i] }));
             this._view?.webview.postMessage({ command: 'updateData', data: dataWithTokens });
         });
