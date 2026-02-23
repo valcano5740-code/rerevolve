@@ -192,3 +192,24 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
   - `refreshAccount`에서 30초 내 갱신 데이터 API 스킵 (중복 호출 방지)
   - `savingNow` 플래그로 자기 저장 시 감시 무시
 
+### v6.8.0 (2026-02-19)
+- **Auto-Accept 확장**: Accept 명령어 3개 → 10개 (Hunk, Supercomplete, Tab Jump 등)
+- **설정 자동 주입/원복**: ON 시 5개 설정 settings.json 주입, OFF 시 원복
+- **browserAllowlist.txt** 자동 생성/삭제
+- **폴링 최적화**: 1000ms → 700ms
+- ⚠️ 계정 감지 기능 제거됨 (state.vscdb 감시, 15초 갱신, 재충전 체크)
+
+### v6.9.0 (2026-02-19)
+- **통합 버전**: v6.7.5 안정성 + v6.8.0 기능
+- ⚠️ 여전히 계정 감지 기능 미복원 (60초 간격만 유지)
+
+### v6.10.0 (2026-02-23)
+- **v6.9.0 + v6.7.11 안정성 통합**
+- **accounts.json 데이터 소실 방지**: load() .bak 복구 + save() 빈 배열 차단 + 자동 백업
+- **Promise.all 안전장치**: hasToken() `.catch(() => false)` 복원
+- **계정 감지 성능 복원**:
+  - state.vscdb 파일 감시(fs.watch) 복원 (2초 디바운스)
+  - 쿼터 갱신 60초 → 15초 복원
+  - 재충전 로컬 체크(checkRechargeLocal) 5초 복원
+- **LICENSE 파일 추가** (vsce package y/N 방지)
+
