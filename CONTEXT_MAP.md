@@ -230,3 +230,17 @@ antigravity.cascade.acceptSuggestedAction        - Cascade 제안 수락
   - 재충전 로컬 체크(checkRechargeLocal) 5초 복원
 - **LICENSE 파일 추가** (vsce package y/N 방지)
 
+### v6.10.1 (2026-02-24)
+- **상태바 쿼터 초기 표시 즉시화**
+  - LS 첫 성공 전에는 vscdb(50ms)로 빠른 이메일 감지
+  - LS는 백그라운드 비동기 시도 → 성공 시 LS-first 모드 전환
+  - 초기 갱신 500ms→1초, 전체갱신 2초→5초
+  - LS 재시도 3회→2회, 캐시 5초→30초
+
+### v6.10.2 (2026-02-24)
+- **쿼터 100% 깜빡임 버그 수정**
+  - vscdb 변경 1회에 fetchQuota() 3회 호출 → 1회로 축소
+  - refreshActiveQuota가 캐시 우선 참조 (API 중복 호출 방지)
+  - refreshActiveOnly에서 중복 refreshQuota 명령어 호출 제거
+  - getCachedQuota() 공개 메서드 추가
+

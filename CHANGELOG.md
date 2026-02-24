@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.10.2] - 2026-02-24 🐛 쿼터 100% 깜빡임 버그 수정
+
+### Fixed
+- 🐛 **API 중복 호출 제거**: vscdb 변경 1회에 `fetchQuota()` 3회 호출 → 1회로 축소
+- 🐛 **상태바 교차 갱신 해소**: `refreshActiveQuota()`가 캐시 우선 참조 (별도 API 호출 방지)
+- `refreshActiveOnly()`에서 중복 `rerevolve.refreshQuota` 명령어 호출 제거
+
+### Added
+- 📋 `getCachedQuota()` 공개 메서드 (상태바용 캐시 참조)
+
+---
+
+## [6.10.1] - 2026-02-24 ⚡ 상태바 쿼터 초기 표시 즉시화
+
+### Changed
+- ⚡ **vscdb 우선 경로**: LS 첫 성공 전에는 vscdb(50ms)로 빠른 이메일 감지
+- LS는 백그라운드 비동기 시도 → 성공 시 LS-first 모드 전환
+- 초기 상태바 갱신 500ms→1초, 전체갱신 2초→5초
+- LS 재시도 3회→2회, 캐시 5초→30초
+
+---
+
 ## [6.10.0] - 2026-02-23 🔗 통합 머지 (v6.9.0 + 안정성)
 
 ### Added
