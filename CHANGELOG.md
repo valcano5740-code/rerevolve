@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [6.10.0] - 2026-02-23 🔗 통합 머지 (v6.9.0 + 안정성)
+
+### Added
+- 🛡️ **accounts.json 데이터 소실 방지**
+  - `load()`: 메인 파일이 빈 배열이면 `.bak`에서 자동 복구
+  - `save()`: 빈 배열 저장 시 메인+.bak 양쪽 체크하여 완전 차단
+  - 저장 전 자동 백업(`accounts.json.bak`) 생성
+- 🔄 **계정 감지 성능 복원** (v6.9.0에서 제거됐던 기능)
+  - `state.vscdb` 파일 감시(fs.watch) 복원 (2초 디바운스)
+  - 쿼터 갱신 60초 → 15초 복원
+  - 재충전 로컬 체크(`checkRechargeLocal`) 5초 복원
+
+### Fixed
+- 🐛 `Promise.all` 안전장치: `hasToken()` 개별 `.catch(() => false)` 복원
+
+---
+
+## [6.9.0] - 2026-02-19 🔗 통합 버전
+
+### Changed
+- 🔗 v6.7.5 안정성 + v6.8.0 기능 통합
+- ⚠️ 계정 감지 기능 일부 미복원 (v6.10.0에서 해결)
+
+---
+
+## [6.8.0] - 2026-02-19 🤖 Auto-Accept 확장
+
+### Added
+- 🤖 **Accept 명령어 10개 확장** (Hunk, Supercomplete, Tab Jump, Cascade 등)
+- ⚙️ **설정 자동 주입/원복**: ON 시 5개 설정 주입, OFF 시 원복
+- 🌐 **browserAllowlist.txt** 자동 생성/삭제
+- 📢 토글 시 알림 메시지 표시
+
+### Changed
+- 폴링 간격 1000ms → 700ms
+
+---
+
+## [6.7.0] - 2026-02-12 🔧 CDP 제거 + pesosz 방식
+
+### Changed
+- 🔧 **Auto-Accept 전면 개편**: CDP 제거, VS Code 내부 명령어 직접 호출
+- ⚡ Boost 런처: `--remote-debugging-port` 옵션 제거
+
+### Removed
+- 🗑️ CDP 관련 코드 전량 삭제 (WebSocket, DOM 클릭 등)
+
+---
+
+
 ## [6.6.3] - 2026-02-10 🔧 OAuth loopback 안정화
 
 ### Fixed

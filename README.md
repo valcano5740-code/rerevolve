@@ -5,9 +5,11 @@ Antigravity IDE에서 다중 계정의 Claude 쿼터량을 한눈에 확인할 �
 ## 주요 기능
 
 - 📊 **다중 계정 쿼터 표시**: 여러 계정의 Claude/GPT 그룹 쿼터를 일목요연하게 확인
-- 🔑 **토큰 캡처**: 현재 Antigravity에 로그인된 계정의 토큰을 자동 캡처
-- 🔄 **전체/개별 새로고침**: 모든 계정 또는 특정 계정만 새로고침
-- 🔒 **무료 계정 잠금**: 비활성화된 무료 계정은 새로고침 잠금 (마지막 상태 유지)
+- 🔑 **OAuth 토큰 캡처**: Google OAuth 인증으로 계정별 정확한 토큰 저장
+- 🔄 **실시간 계정 감지**: Language Server API + state.vscdb 파일 감시로 활성 계정 자동 감지
+- 🤖 **Auto-Accept**: 10개 Accept 명령어 자동 실행 (700ms 폴링, 설정 자동 주입/원복)
+- 🌐 **Browser Allowlist**: Auto-Accept ON 시 browserAllowlist.txt 자동 생성
+- 🛡️ **데이터 보호**: accounts.json 자동 백업 + 빈 배열 덮어쓰기 방지
 - ⚡ **Antigravity 재시작**: 번개 아이콘으로 IDE 완전 재시작
 
 ## 설치 방법

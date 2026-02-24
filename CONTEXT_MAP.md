@@ -66,40 +66,57 @@ Windows: %APPDATA%/Antigravity/User/globalStorage/state.vscdb
 
 ---
 
-## 🤖 Cluster: Auto Accept (CDP + 명령어)
+## 🤖 Cluster: Auto Accept (내부 명령어 + 설정 토글)
 
-### Current Understanding
-- [Verified] CDP 연결로 버튼 감지 및 클릭
-- [2026-02-06] 선택자 확장됨: `btn`, `role="button"`, `action` 클래스
-- [2026-02-06] 자체 버튼 제외: `auto-accept`, `rerevolve`, `quota`
-- **[v3.1] VS Code 명령어 직접 호출 추가** (하이브리드)
-- **[v3.1] 참조: Ricco6/always-accept-antigravity**
-- **[v6.6.0] browser-level WebSocket 추가** (제거됨 v6.7.0)
-- **[v6.7.0] pesosz 방식 전면 교체 (CDP 제거)**
-  - `antigravity.agent.acceptAgentStep`
-  - `antigravity.terminal.accept`
-  - 500ms 인터벌 실행 (가장 단순하고 확실한 방법)
+### Current Understanding (v6.10.0)
+- **[v6.7.0+] CDP 완전 제거** — VS Code 내부 명령어만 사용
+- **[v6.9.0] Accept 명령어 10개** (Hunk, Supercomplete, Tab Jump 등)
+- **[v6.9.0] 설정 자동 주입/원복** (ON 시 5개 설정 + browserAllowlist.txt)
+- 700ms 인터벌 폴링, 비차단 실행 (`await` 없음)
+- globalState에 ON/OFF 상태 저장 (재시작 시 복원)
+- 토글 시 상태바 + 알림 메시지 표시
 
-### Antigravity Accept 명령어 (1순위)
+### Accept 명령어 (10개)
 ```
-antigravity.agent.acceptAgentStep       - 에이전트 스텝 승인 (Accept All)
-antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식)
+antigravity.agent.acceptAgentStep              - 에이전트 스텝 승인 (Accept All)
+antigravity.terminalCommand.accept              - 터미널 명령 승인
+antigravity.command.accept                      - 일반 명령 승인
+antigravity.prioritized.agentAcceptAllInFile    - 파일 내 전체 변경 수락
+antigravity.prioritized.agentAcceptFocusedHunk  - 포커스된 Hunk 수락
+antigravity.prioritized.supercompleteAccept     - Supercomplete 수락
+antigravity.acceptCompletion                    - 자동완성 수락
+antigravity.prioritized.terminalSuggestion.accept - 터미널 제안 수락
+antigravity.prioritized.tabJumpAccept           - Tab Jump 수락
+antigravity.cascade.acceptSuggestedAction        - Cascade 제안 수락
 ```
+
+### 관리되는 설정 (ON 시 주입, OFF 시 원복)
+| 설정 키 | ON 값 | 효과 |
+|---|---|---|
+| `cached.allowAgentAccessNonWorkspaceFiles` | `true` | 워크스페이스 외부 파일 접근 |
+| `cached.terminalAutoExecutionPolicy` | `autoExecute` | 터미널 명령 자동 실행 |
+| `cached.allowCascadeAccessGitignoreFiles` | `true` | gitignore 파일 접근 |
+| `cached.artifactReviewPolicy` | `autoApply` | 아티팩트 자동 적용 |
+| `security.workspace.trust.untrustedFiles` | `open` | 신뢰되지 않은 파일 열기 |
+
+### browserAllowlist.txt (Auto-Accept ON 시 자동 생성)
+- 경로: `~/.gemini/antigravity/browserAllowlist.txt`
+- 내용: `http://127.0.0.1:*/*`, `http://localhost:*/*`, `https://*/*`, `http://*/*`
+- OFF 시 삭제
 
 ### Key Decisions
 | Date | Decision | Rationale |
 |------|----------|-----------|
-| 2026-02-05 | REJECT_PATTERNS에 자체 버튼 추가 | 무한 클릭 방지 |
-| 2026-02-06 | 상태바 피드백 추가 | 작동 여부 확인용 |
 | 2026-02-06 | VS Code 명령어 1순위 도입 | CDP DOM 클릭보다 안정적 |
-| 2026-02-10 | browser-level WebSocket 추가 | `/json/list`에 page 없고 worker만 노출 |
-| 2026-02-12 | **CDP 전면 제거 (pesosz 방식)** | Electron 네이티브 UI 접근 불가, 내부 명령어가 정답 |
+| 2026-02-12 | **CDP 전면 제거** | Electron 네이티브 UI 접근 불가 |
+| 2026-02-19 | 명령어 3개→10개 확장 | 모든 수락 UI 자동 처리 |
+| 2026-02-19 | 설정 토글 연동 | ON 시 자동 주입/OFF 시 원복 |
 
-### 참고 자료 (GitHub)
-| 프로젝트 | 설명 | 참고 내용 |
-|----------|------|-----------|
-| [pesosz/antigravity-auto-accept](https://marketplace.visualstudio.com/items?itemName=pesosz.antigravity-auto-accept) | **Auto Accept (v1.0.3)** | `terminal.accept` 사용 (**오류**: 실제는 `terminalCommand.accept`) |
-| [Ricco6/always-accept-antigravity](https://github.com/Ricco6/always-accept-antigravity) | Auto Proceed Extension | 명령어 참조 |
+### 참고 자료
+| 프로젝트 | 설명 |
+|----------|------|
+| [pesosz/antigravity-auto-accept](https://marketplace.visualstudio.com/items?itemName=pesosz.antigravity-auto-accept) | 단순 명령어 실행 방식 참고 |
+| [Ricco6/always-accept-antigravity](https://github.com/Ricco6/always-accept-antigravity) | 명령어 발견 참고 |
 
 ---
 
@@ -117,7 +134,7 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 - **이름**: Toolkit for Antigravity (이전: Antigravity Panel)
 - **식별자**: `n2ns.antigravity-panel`
 - **버전**: 2.5.11
-- **다운로드**: 62k
+- **다운로드**: 82k+
 - **개발사**: N2N Synthetics
 - **라이선스**: Apache 2.0
 - **저장소**: https://github.com/n2ns/antigravity-panel
@@ -132,17 +149,17 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 - [Verified] **Language Server HTTP API로 직접 통신** - 파일 읽기 아님!
 - [Verified] `ProcessFinder`로 Language Server 프로세스 자동 감지
 - [Verified] 포트 + CSRF 토큰 추출하여 HTTP POST 요청
-- [Verified] 갱신 주기: `dashboard.refreshRate` 설정값 (기본 60초?)
-- [2026-02-06] 우리 앱보다 갱신 주기가 길지만 (1-2분 vs 30초) 더 빠르게 반응
+- [Verified] 갱신 주기: `dashboard.refreshRate` 설정값 (기본 90초)
+- [Verified] Auto-Accept: 800ms 기본 간격, 설정 가능 (200~5000ms)
 
-### 기술 분석 (Verified)
+### 기술 분석 (v6.10.0 기준)
 | 항목 | ReRevolve | Toolkit |
 |------|-----------|---------|
-| **쿼터 감지** | state.vscdb 파일 읽기 | Language Server HTTP API |
-| **계정 감지** | state.vscdb 파일 읽기 | Language Server API 응답 |
-| **통신 방식** | 파일 시스템 | HTTP (localhost:PORT) |
-| **반응 속도** | 느림 (파일 플러시 대기) | 빠름 (실시간) |
-| **서버 감지** | 없음 (고정 경로) | ProcessFinder (프로세스 스캔) |
+| **쿼터 감지** | LS API + Refresh Token → 별도 API | LS `GetUserStatus` 응답에서 직접 추출 |
+| **계정 감지** | LS API (`GetUserStatus`) + vscdb fallback | LS API 응답 |
+| **통신 방식** | HTTP (localhost:PORT) | HTTP (localhost:PORT) |
+| **반응 속도** | 초기 500ms → 15초 재시도 | refreshRate 설정값 (90초) |
+| **서버 감지** | ProcessFinder (프로세스 스캔) | ProcessFinder (프로세스 스캔) |
 
 ### 소스 참조
 - **저장소**: https://github.com/n2ns/antigravity-panel
@@ -154,10 +171,10 @@ antigravity.terminal.accept             - 터미널 명령 승인 (pesosz 방식
 
 ## ✅ TODO
 
-- [ ] Toolkit 소스 분석하여 실제 감지 방식 확인
+- [x] Toolkit 소스 분석하여 실제 감지 방식 확인 (동일한 `GetUserStatus` API 사용)
 - [ ] 계정 전환 기능 검증
-- [ ] UI 버튼 이름 변경 ("토큰 캡처" → "계정 저장")
-- [ ] SonarQube 경고 수정
+- [ ] UI 버튼 이름 변경 ("토큰 캐프처" → "계정 저장")
+- [ ] 초기 상태바 쿼터 표시 지연 문제 해결 (초기 재시도 로직 강화)
 
 ---
 
