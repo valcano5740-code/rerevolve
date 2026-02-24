@@ -264,19 +264,19 @@ export function activate(context: vscode.ExtensionContext) {
 
     console.log('ReRevolve: 초기화 완료');
 
-    // 확장프로그램 시작 시 활성 계정 감지 및 쿼터 갱신 (통합)
+    // 상태바 빠른 갱신 (1초 후 - vscdb 빠른 경로 활용)
     setTimeout(async () => {
-        console.log('ReRevolve: 시작 시 활성 계정 감지 및 쿼터 갱신');
-        await sidebarProvider.refreshActiveOnly(); // 빠른 활성 계정 감지
-        await refreshActiveQuota(); // 상태바도 즉시 갱신
-    }, 500);
+        console.log('ReRevolve: 시작 시 상태바 쿼터 빠른 갱신 (vscdb 경로)');
+        await refreshActiveQuota();
+    }, 1000);
 
-    // 전체 쿼터 갱신은 2초 후 (모든 계정)
+    // 전체 갱신은 5초 후 (LS 준비 시간 확보)
     setTimeout(async () => {
-        console.log('ReRevolve: 시작 시 전체 갱신 실행');
+        console.log('ReRevolve: 시작 시 전체 갱신 실행 (LS 경로)');
+        await sidebarProvider.refreshActiveOnly();
         await sidebarProvider.refreshAll();
-        await refreshActiveQuota(); // 상태바도 갱신
-    }, 2000);
+        await refreshActiveQuota();
+    }, 5000);
 
     // 쿼터 상태바 15초마다 자동 갱신 (계정 전환 빠른 감지)
     setInterval(async () => {

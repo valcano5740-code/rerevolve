@@ -50,6 +50,7 @@ export class TokenService {
     private cachedToken: string | null = null;
     private tokenExpiry: Date | null = null;
     private lsClient: LanguageServerClient;
+    private lsEverSucceeded = false; // LS 첫 성공 전에는 vscdb 우선
 
     constructor(private globalState: vscode.Memento) {
         this.lsClient = new LanguageServerClient();
@@ -482,14 +483,31 @@ export class TokenService {
 
     /**
      * 현재 Antigravity에 로그인된 이메일 추출
-     * 1순위: Language Server API (실시간, 빠름)
-     * 2순위: state.vscdb 파일 (fallback)
+     * LS 첫 성공 전: vscdb 먼저 (50ms) → LS 백그라운드
+     * LS 첫 성공 후: LS 먼저 (실시간) → vscdb fallback
      */
     async getCurrentLoggedInEmail(): Promise<string | null> {
-        // 1순위: Language Server API (실시간 감지)
+        // 빠른 경로: LS 성공 이력 없으면 vscdb 먼저 (초기 3-9초 블로킹 방지)
+        if (!this.lsEverSucceeded) {
+            const vscdbEmail = await this.getCurrentLoggedInEmailFromVscdb();
+            if (vscdbEmail) {
+                console.log(`ReRevolve: Fast path - email from vscdb: ${vscdbEmail}`);
+                // 백그라운드에서 LS 시도 (성공하면 플래그 설정)
+                this.lsClient.getCurrentEmail().then(email => {
+                    if (email) {
+                        this.lsEverSucceeded = true;
+                        console.log(`ReRevolve: LS now available, switching to LS-first path`);
+                    }
+                }).catch(() => {});
+                return vscdbEmail;
+            }
+        }
+
+        // LS 우선 경로 (LS 성공 이력 있거나 vscdb도 실패한 경우)
         try {
             const email = await this.lsClient.getCurrentEmail();
             if (email) {
+                this.lsEverSucceeded = true;
                 console.log(`ReRevolve: Active account from Language Server: ${email}`);
                 return email;
             }
@@ -497,7 +515,7 @@ export class TokenService {
             console.log('ReRevolve: Language Server not available, falling back to vscdb');
         }
 
-        // 2순위: state.vscdb fallback
+        // 최종 fallback: vscdb
         return this.getCurrentLoggedInEmailFromVscdb();
     }
 
