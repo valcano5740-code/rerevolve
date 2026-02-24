@@ -402,9 +402,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
 
         this.refresh();
+    }
 
-        // 상태바도 즉시 갱신
-        vscode.commands.executeCommand('rerevolve.refreshQuota');
+    /**
+     * 캐시된 쿼터 조회 (상태바용 - API 중복 호출 방지)
+     */
+    getCachedQuota(email: string): QuotaResult | null {
+        // 원본 키로 먼저 시도, 없으면 소문자로 검색
+        if (this.quotaCache[email]) return this.quotaCache[email];
+        const lower = email.toLowerCase();
+        for (const [key, value] of Object.entries(this.quotaCache)) {
+            if (key.toLowerCase() === lower) return value;
+        }
+        return null;
     }
 
     async refreshAccount(email: string): Promise<void> {

@@ -239,7 +239,7 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
-    // 활성 계정 쿼터 갱신 함수
+    // 활성 계정 쿼터 갱신 함수 (캐시 우선 → API fallback)
     async function refreshActiveQuota(): Promise<void> {
         try {
             const activeEmail = await tokenService.getCurrentLoggedInEmail();
@@ -248,6 +248,14 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
+            // sidebarProvider 캐시에서 우선 가져오기 (API 중복 호출 방지)
+            const cachedQuota = sidebarProvider.getCachedQuota(activeEmail);
+            if (cachedQuota && !cachedQuota.error) {
+                updateQuotaStatusBar(activeEmail, cachedQuota);
+                return;
+            }
+
+            // 캐시 없으면 직접 API 조회
             const token = await tokenService.getToken(activeEmail);
             if (!token) {
                 updateQuotaStatusBar(activeEmail, null);
