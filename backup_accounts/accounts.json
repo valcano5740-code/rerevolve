@@ -1,0 +1,115 @@
+{
+  "accounts": [
+    {
+      "email": "valcano5740@gmail.com",
+      "name": "valcano5740",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:35.525Z"
+    },
+    {
+      "email": "valcjapan@gmail.com",
+      "name": "valcjapan",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:34.817Z"
+    },
+    {
+      "email": "valcano0001@gmail.com",
+      "name": "valcano0001",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:36.291Z"
+    },
+    {
+      "email": "valcano0002@gmail.com",
+      "name": "valcano0002",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:36.955Z"
+    },
+    {
+      "email": "valcano0003@gmail.com",
+      "name": "valcano0003",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:37.875Z"
+    },
+    {
+      "email": "valcano0004@gmail.com",
+      "name": "valcano0004",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:41.627Z"
+    },
+    {
+      "email": "valcano0005@gmail.com",
+      "name": "valcano0005",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:42.109Z"
+    },
+    {
+      "email": "valcano0011@gmail.com",
+      "name": "valcano0011",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": true,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:42.956Z"
+    },
+    {
+      "email": "valcano0012@gmail.com",
+      "name": "valcano0012",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:45.017Z"
+    },
+    {
+      "email": "valcano0013@gmail.com",
+      "name": "valcano0013",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:45.870Z"
+    },
+    {
+      "email": "valcano0014@gmail.com",
+      "name": "valcano0014",
+      "tier": "pro",
+      "isPaid": true,
+      "isActive": false,
+      "refreshLocked": false,
+      "createdAt": "2026-03-06T00:14:00.000Z",
+      "lastUpdated": "2026-03-06T00:16:46.498Z"
+    }
+  ],
+  "lastUpdated": "2026-03-09T05:13:39.302Z"
+}

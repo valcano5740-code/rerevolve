@@ -116,7 +116,8 @@ function checkRechargeLocal(): void {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-    console.log('ReRevolve: 확장 활성화');
+    try {
+    console.log('ReRevolve v7.2: 확장 활성화 시작');
 
     // 서비스 초기화
     accountManager = new AccountManager(context);
@@ -398,6 +399,9 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Auto-Accept 저장된 상태 복원 (ON이었으면 자동 재시작)
     setTimeout(() => autoAcceptService.restoreState(), 3000);
+    } catch (err) {
+        console.error('ReRevolve: 활성화 중 에러 발생:', err);
+    }
 }
 
 export function deactivate() {
