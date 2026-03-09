@@ -200,6 +200,38 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Auto-Run 패치 되돌리기
+    context.subscriptions.push(
+        vscode.commands.registerCommand('rerevolve.revertAutoRun', () => {
+            const { revertAll } = require('./auto-run-patcher');
+            const results = revertAll();
+            for (const r of results) {
+                if (r.status === 'reverted') {
+                    vscode.window.showInformationMessage(`ReRevolve: [${r.label}] Auto-Run 패치 복원됨`);
+                } else if (r.status === 'no-backup') {
+                    vscode.window.showWarningMessage(`ReRevolve: [${r.label}] 백업 파일 없음`);
+                } else if (r.status === 'error') {
+                    vscode.window.showErrorMessage(`ReRevolve: [${r.label}] 복원 실패: ${r.error}`);
+                }
+            }
+            if (results.some((r: any) => r.status === 'reverted')) {
+                vscode.window.showInformationMessage('패치 복원 후 Antigravity를 재시작해주세요.', '재시작').then(sel => {
+                    if (sel === '재시작') vscode.commands.executeCommand('workbench.action.reloadWindow');
+                });
+            }
+        })
+    );
+
+    // Auto-Run 패치 상태 확인
+    context.subscriptions.push(
+        vscode.commands.registerCommand('rerevolve.autoRunStatus', () => {
+            const { getStatus } = require('./auto-run-patcher');
+            const statuses = getStatus();
+            const lines = statuses.map((s: any) => `[${s.label}] ${s.status}`);
+            vscode.window.showInformationMessage(`Auto-Run 패치 상태: ${lines.join(', ')}`);
+        })
+    );
+
     // Antigravity 재시작 명령어 (번개 아이콘)
     context.subscriptions.push(
         vscode.commands.registerCommand('rerevolve.reloadAntigravity', async () => {

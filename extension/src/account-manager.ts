@@ -1,10 +1,12 @@
 /**
  * Account Manager - 계정 CRUD 관리
+ * Atomic Write + globalState 이중 백업으로 비정상 종료 시에도 데이터 보존
  */
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as os from 'os';
 
 export interface Account {
     email: string;
@@ -37,81 +39,118 @@ export class AccountManager {
         }
     }
 
+    /**
+     * 파일 내용이 유효한 JSON인지 검증 (NULL 바이트 손상 감지 포함)
+     */
+    private tryReadAccountsFile(filePath: string): AccountsData | null {
+        if (!fs.existsSync(filePath)) return null;
+        try {
+            const raw = fs.readFileSync(filePath, 'utf-8');
+            // NULL 바이트 손상 감지: 첫 10바이트가 모두 \0이면 손상된 파일
+            if (raw.length > 0 && raw.substring(0, Math.min(10, raw.length)).replace(/\0/g, '').length === 0) {
+                console.error(`ReRevolve: ${path.basename(filePath)} NULL 바이트 손상 감지 (${raw.length} bytes)`);
+                return null;
+            }
+            const parsed = JSON.parse(raw);
+            if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+                return parsed;
+            }
+        } catch (err) {
+            console.error(`ReRevolve: ${path.basename(filePath)} 파싱 실패`, err);
+        }
+        return null;
+    }
+
     private load(): AccountsData {
         const empty: AccountsData = { accounts: [], lastUpdated: null };
         const bakPath = this.dataPath + '.bak';
 
         // 1. 메인 파일 읽기 시도
-        if (fs.existsSync(this.dataPath)) {
-            try {
-                const raw = fs.readFileSync(this.dataPath, 'utf-8');
-                const parsed = JSON.parse(raw);
-                if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
-                    return parsed;
-                }
-            } catch (err) {
-                console.error('ReRevolve: accounts.json 파싱 실패', err);
-            }
+        const mainData = this.tryReadAccountsFile(this.dataPath);
+        if (mainData) return mainData;
+
+        // 2. .bak에서 복구 시도
+        const bakData = this.tryReadAccountsFile(bakPath);
+        if (bakData) {
+            console.log(`ReRevolve: 백업에서 ${bakData.accounts.length}개 계정 자동 복구`);
+            this.atomicWrite(this.dataPath, bakData);
+            return bakData;
         }
 
-        // 2. 메인 파일이 없거나 빈 배열이면 → .bak에서 복구
-        if (fs.existsSync(bakPath)) {
-            try {
-                const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
-                if (bakData && Array.isArray(bakData.accounts) && bakData.accounts.length > 0) {
-                    console.log(`ReRevolve: 백업에서 ${bakData.accounts.length}개 계정 자동 복구`);
-                    // 메인 파일에 복원
-                    fs.writeFileSync(this.dataPath, JSON.stringify(bakData, null, 2));
-                    return bakData;
+        // 3. 파일+백업 모두 실패 → globalState에서 최종 복구
+        try {
+            const gsData = this.context.globalState.get<string>('rerevolve_accounts_backup');
+            if (gsData) {
+                const parsed = JSON.parse(gsData);
+                if (parsed && Array.isArray(parsed.accounts) && parsed.accounts.length > 0) {
+                    console.log(`ReRevolve: ✅ globalState에서 ${parsed.accounts.length}개 계정 최종 복구!`);
+                    vscode.window.showWarningMessage(
+                        `ReRevolve: accounts.json 손상 감지 → globalState에서 ${parsed.accounts.length}개 계정 복구됨`
+                    );
+                    this.atomicWrite(this.dataPath, parsed);
+                    return parsed;
                 }
-            } catch {
-                console.error('ReRevolve: 백업 파일도 파싱 실패');
             }
+        } catch (err) {
+            console.error('ReRevolve: globalState 복구도 실패', err);
         }
 
         return empty;
     }
 
+    /**
+     * Atomic Write: 임시 파일에 쓰고 → fsync → rename으로 원본 교체
+     * 비정상 종료 시에도 원본 또는 백업 중 하나는 반드시 유효
+     */
+    private atomicWrite(targetPath: string, data: AccountsData): void {
+        const tmpPath = targetPath + '.tmp';
+        const content = JSON.stringify(data, null, 2);
+
+        // 1. 임시 파일에 쓰기
+        const fd = fs.openSync(tmpPath, 'w');
+        fs.writeSync(fd, content);
+        fs.fsyncSync(fd);  // 디스크에 확실히 플러시
+        fs.closeSync(fd);
+
+        // 2. 임시 파일 → 원본으로 교체 (atomic rename)
+        fs.renameSync(tmpPath, targetPath);
+    }
+
     private save(data: AccountsData): void {
         const bakPath = this.dataPath + '.bak';
 
-        // 빈 배열 저장 시도 차단: .bak 포함 어디든 계정 데이터가 있으면 절대 빈 배열로 덮어쓰기 않음
+        // 빈 배열 저장 시도 차단: 어디든 계정 데이터가 있으면 빈 배열로 덮어쓰지 않음
         if (data.accounts.length === 0) {
-            // 메인 파일 체크
-            if (fs.existsSync(this.dataPath)) {
-                try {
-                    const existing = JSON.parse(fs.readFileSync(this.dataPath, 'utf-8'));
-                    if (existing.accounts && existing.accounts.length > 0) {
-                        console.warn(`ReRevolve: ⚠️ 빈 배열 저장 차단 (메인 파일에 ${existing.accounts.length}개 계정 보존)`);
-                        return;
-                    }
-                } catch { /* ignore */ }
+            const mainData = this.tryReadAccountsFile(this.dataPath);
+            if (mainData) {
+                console.warn(`ReRevolve: ⚠️ 빈 배열 저장 차단 (메인 파일에 ${mainData.accounts.length}개 계정 보존)`);
+                return;
             }
-            // .bak 파일 체크
-            if (fs.existsSync(bakPath)) {
-                try {
-                    const bakData = JSON.parse(fs.readFileSync(bakPath, 'utf-8'));
-                    if (bakData.accounts && bakData.accounts.length > 0) {
-                        console.warn(`ReRevolve: ⚠️ 빈 배열 저장 차단 (백업에 ${bakData.accounts.length}개 계정 존재)`);
-                        return;
-                    }
-                } catch { /* ignore */ }
+            const bakData = this.tryReadAccountsFile(bakPath);
+            if (bakData) {
+                console.warn(`ReRevolve: ⚠️ 빈 배열 저장 차단 (백업에 ${bakData.accounts.length}개 계정 존재)`);
+                return;
             }
-        }
-
-        // 저장 전 백업 생성 (현재 파일에 계정이 있을 때만)
-        if (fs.existsSync(this.dataPath)) {
-            try {
-                const current = fs.readFileSync(this.dataPath, 'utf-8');
-                const parsed = JSON.parse(current);
-                if (parsed.accounts && parsed.accounts.length > 0) {
-                    fs.writeFileSync(bakPath, current);
-                }
-            } catch { /* ignore */ }
         }
 
         data.lastUpdated = new Date().toISOString();
-        fs.writeFileSync(this.dataPath, JSON.stringify(data, null, 2));
+
+        // 1. 현재 유효한 원본 → .bak으로 안전하게 교체 (atomic)
+        const currentData = this.tryReadAccountsFile(this.dataPath);
+        if (currentData) {
+            this.atomicWrite(bakPath, currentData);
+        }
+
+        // 2. 새 데이터 → 원본에 atomic write
+        this.atomicWrite(this.dataPath, data);
+
+        // 3. globalState에도 이중 백업 (비정상 종료 시 파일+.bak 동시 손상 대비)
+        if (data.accounts.length > 0) {
+            this.context.globalState.update('rerevolve_accounts_backup', JSON.stringify(data)).then(
+                () => {},
+                (err) => console.error('ReRevolve: globalState 백업 실패', err)
+            );
+        }
     }
 
     getAccounts(): Account[] {

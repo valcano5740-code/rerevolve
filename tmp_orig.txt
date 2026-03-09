@@ -1,0 +1,36 @@
+    private sendDataToWebview(): void {
+        if (!this._view) return;
+
+        const accounts = this.accountManager.getAccountsSorted();
+        const data = accounts.map(account => ({
+            ...account,
+            quota: this.quotaCache[account.email] || null,
+            hasToken: false // 비동기라서 일단 false
+        }));
+
+        // 토큰 상태 비동기 확인
+        Promise.all(accounts.map(a => this.tokenService.hasToken(a.email))).then(hasTokens => {
+            const dataWithTokens = data.map((d, i) => ({ ...d, hasToken: hasTokens[i] }));
+            this._view?.webview.postMessage({ command: 'updateData', data: dataWithTokens });
+        });
+    }
+
+    private loadQuotaCache(): void {
+        try {
+            if (fs.existsSync(this.quotaCachePath)) {
+                this.quotaCache = JSON.parse(fs.readFileSync(this.quotaCachePath, 'utf-8'));
+            }
+        } catch {
+            this.quotaCache = {};
+        }
+    }
+
+    private saveQuotaCache(): void {
+        try {
+            const dir = path.dirname(this.quotaCachePath);
+            if (!fs.existsSync(dir)) {
+                fs.mkdirSync(dir, { recursive: true });
+            }
+            fs.writeFileSync(this.quotaCachePath, JSON.stringify(this.quotaCache, null, 2));
+        } catch (err) {
+            console.error('ReRevolve: Failed to save quota cache', err);

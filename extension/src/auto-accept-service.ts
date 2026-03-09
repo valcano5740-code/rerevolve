@@ -1,7 +1,7 @@
 /**
- * Auto-Accept Service v6.9.0 - 통합 버전
+ * Auto-Accept Service v7.0.0 - Auto-Run 패치 통합
  * 
- * Git v6.7.5 (pesosz 방식, 안정성 설계) + v6.8.0 (확장 명령어, 설정 토글 연동) 합본
+ * v6.9.0 (폴링 방식) + Better Antigravity 참고 JS 패치 (근본 수정) 하이브리드
  * 
  * 설계 원칙:
  * - 비차단 poll: await 사용 금지 → UI 프리징 방지
@@ -9,11 +9,13 @@
  * - EventEmitter: 정식 VS Code 이벤트 패턴
  * - 10개 Accept 명령어: 모든 수락 UI 자동 처리
  * - 설정 토글 연동: ON 시 settings.json 주입 + browserAllowlist 생성, OFF 시 원복
+ * - Auto-Run 패치: Antigravity JS 파일에 누락된 useEffect 주입 (근본 수정)
  */
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
+import { autoApply, PatchResult } from './auto-run-patcher';
 
 // ===== Accept 명령어 목록 (v6.8.0 확장) =====
 // ⚠️ terminalCommand.run은 "실행" 명령이라 자동 호출 금지
@@ -72,13 +74,16 @@ export class AutoAcceptService implements vscode.Disposable {
         // 설정 자동 주입 (ON 시)
         this.applySettings();
 
+        // Auto-Run 패치 적용 ("Always Proceed" 버그 근본 수정)
+        this.applyAutoRunPatch();
+
         // 비차단 폴링 시작 (await 사용 안 함 → UI 프리징 방지)
         this.pollTimer = setInterval(() => {
             if (!this._enabled) return;
             this.poll();
         }, POLL_INTERVAL);
 
-        console.log(`ReRevolve: Auto-Accept ON (${POLL_INTERVAL}ms, ${ACCEPT_COMMANDS.length}개 명령어)`);
+        console.log(`ReRevolve: Auto-Accept ON (${POLL_INTERVAL}ms, ${ACCEPT_COMMANDS.length}개 명령어 + Auto-Run 패치)`);
     }
 
     /**
@@ -191,6 +196,28 @@ export class AutoAcceptService implements vscode.Disposable {
         } catch (err) {
             console.error('ReRevolve: 설정 원복 실패', err);
         }
+    }
+
+    // ===== Auto-Run 패치 (JS 파일 수정) =====
+    private applyAutoRunPatch(): void {
+        autoApply().then(results => {
+            for (const r of results) {
+                if (r.status === 'patched') {
+                    console.log(`ReRevolve: ✅ [${r.label}] Auto-Run 패치 적용 (+${r.bytesAdded} bytes)`);
+                    if (r.details) console.log(`  → ${r.details}`);
+                } else if (r.status === 'already-patched') {
+                    console.log(`ReRevolve: ✓ [${r.label}] 이미 패치됨`);
+                } else if (r.status === 'ba-patched') {
+                    console.log(`ReRevolve: ✓ [${r.label}] ${r.details}`);
+                } else if (r.status === 'pattern-not-found') {
+                    console.log(`ReRevolve: ⚠ [${r.label}] ${r.details}`);
+                } else if (r.status === 'error') {
+                    console.error(`ReRevolve: ❌ [${r.label}] 패치 실패: ${r.error}`);
+                }
+            }
+        }).catch(err => {
+            console.error('ReRevolve: Auto-Run 패치 실행 실패', err);
+        });
     }
 
     dispose(): void {
