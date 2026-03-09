@@ -272,6 +272,9 @@ export function activate(context: vscode.ExtensionContext) {
     );
 
     // 활성 계정 쿼터 갱신 함수 (캐시 우선 → API fallback)
+    // 이전 활성 이메일 (변경 감지용)
+    let lastActiveEmail: string | null = null;
+
     async function refreshActiveQuota(): Promise<void> {
         try {
             const activeEmail = await tokenService.getCurrentLoggedInEmail();
@@ -280,14 +283,31 @@ export function activate(context: vscode.ExtensionContext) {
                 return;
             }
 
-            // sidebarProvider 캐시에서 우선 가져오기 (API 중복 호출 방지)
-            const cachedQuota = sidebarProvider.getCachedQuota(activeEmail);
-            if (cachedQuota && !cachedQuota.error) {
-                updateQuotaStatusBar(activeEmail, cachedQuota);
+            // 계정 변경 감지 → 캐시 무시하고 강제 갱신
+            const emailChanged = lastActiveEmail !== null && lastActiveEmail !== activeEmail;
+            if (emailChanged) {
+                console.log(`ReRevolve: 활성 계정 변경 감지 (${lastActiveEmail} → ${activeEmail})`);
+                quotaService.invalidateLsCache();
+            }
+            lastActiveEmail = activeEmail;
+
+            // 계정 변경이 아니면 캐시 우선
+            if (!emailChanged) {
+                const cachedQuota = sidebarProvider.getCachedQuota(activeEmail);
+                if (cachedQuota && !cachedQuota.error) {
+                    updateQuotaStatusBar(activeEmail, cachedQuota);
+                    return;
+                }
+            }
+
+            // 1차: 로컬 LS API (빠르고 부하 없음)
+            const localQuota = await quotaService.fetchQuotaLocal(activeEmail);
+            if (localQuota) {
+                updateQuotaStatusBar(activeEmail, localQuota);
                 return;
             }
 
-            // 캐시 없으면 직접 API 조회
+            // 2차: 기존 Google API (fallback)
             const token = await tokenService.getToken(activeEmail);
             if (!token) {
                 updateQuotaStatusBar(activeEmail, null);
@@ -318,10 +338,35 @@ export function activate(context: vscode.ExtensionContext) {
         await refreshActiveQuota();
     }, 5000);
 
-    // 쿼터 상태바 15초마다 자동 갱신 (계정 전환 빠른 감지)
-    setInterval(async () => {
-        await refreshActiveQuota();
-    }, 15000);
+    // 스마트 폴링: 창 포커스 시에만 15초마다 갱신, 비활성 시 정지
+    let quotaPollingTimer: ReturnType<typeof setInterval> | null = null;
+
+    function startQuotaPolling() {
+        if (quotaPollingTimer) clearInterval(quotaPollingTimer);
+        quotaPollingTimer = setInterval(async () => {
+            await refreshActiveQuota();
+        }, 15000);
+    }
+
+    function stopQuotaPolling() {
+        if (quotaPollingTimer) {
+            clearInterval(quotaPollingTimer);
+            quotaPollingTimer = null;
+        }
+    }
+
+    startQuotaPolling();
+
+    context.subscriptions.push(
+        vscode.window.onDidChangeWindowState(state => {
+            if (state.focused) {
+                refreshActiveQuota();
+                startQuotaPolling();
+            } else {
+                stopQuotaPolling();
+            }
+        })
+    );
 
     // 재충전 로컬 체크 5초마다 (API 호출 없이 시간 비교만)
     setInterval(() => {

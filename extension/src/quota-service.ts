@@ -1,6 +1,16 @@
 /**
- * Quota Service - CloudCode API를 통한 쿼터 조회
+ * Quota Service - CloudCode API + 로컬 LS API 하이브리드 쿼터 조회
+ *
+ * 활성 계정: 로컬 LS GetUserStatus (빠르고 부하 없음)
+ * 비활성 계정: 기존 Google CloudCode API (원격)
  */
+
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as http from 'http';
+import * as https from 'https';
+
+const execAsync = promisify(exec);
 
 export interface ModelQuota {
     displayName: string;
@@ -31,6 +41,51 @@ const GROUPS = {
 
 export class QuotaService {
     private readonly API_BASE = 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal';
+
+    // 로컬 LS 프로세스 캐시
+    private cachedLsPort: number | null = null;
+    private cachedLsCsrf: string | null = null;
+    private lsCacheExpiry = 0;
+
+    /**
+     * 로컬 LS API로 활성 계정 쿼터 조회 (OAuth 토큰 불필요)
+     * 성공 시 QuotaResult, 실패 시 null → Google API fallback
+     */
+    async fetchQuotaLocal(email: string): Promise<QuotaResult | null> {
+        try {
+            // LS 프로세스 캐시 (60초)
+            if (!this.cachedLsPort || Date.now() > this.lsCacheExpiry) {
+                const info = await this.findLsProcess();
+                if (!info) {
+                    console.log('ReRevolve: LS 프로세스 미감지 → Google API fallback');
+                    return null;
+                }
+                this.cachedLsPort = info.port;
+                this.cachedLsCsrf = info.csrf;
+                this.lsCacheExpiry = Date.now() + 60000;
+            }
+
+            const data = await this.callLocalApi(
+                this.cachedLsPort!,
+                this.cachedLsCsrf!,
+                '/exa.language_server_pb.LanguageServerService/GetUserStatus',
+                { metadata: { ideName: 'antigravity', extensionName: 'antigravity', locale: 'en' } }
+            );
+            return this.parseLocalResponse(email, data);
+        } catch (err) {
+            console.log(`ReRevolve: 로컬 LS 쿼터 조회 실패: ${err} → fallback`);
+            this.cachedLsPort = null;
+            this.lsCacheExpiry = 0;
+            return null;
+        }
+    }
+
+    /** LS 캐시 무효화 (계정 전환 감지 시) */
+    invalidateLsCache(): void {
+        this.cachedLsPort = null;
+        this.cachedLsCsrf = null;
+        this.lsCacheExpiry = 0;
+    }
 
     /**
      * 특정 토큰으로 쿼터 조회
@@ -257,5 +312,208 @@ export class QuotaService {
             lastUpdated: new Date(),
             error
         };
+    }
+
+    // ========== 로컬 LS 응답 파싱 ==========
+
+    private parseLocalResponse(email: string, data: any): QuotaResult {
+        const models: ModelQuota[] = [];
+        const userStatus = data?.userStatus;
+        const rawModels: any[] = userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
+        const planStatus = userStatus?.planStatus;
+        const isPaidAccount = !!(planStatus?.planInfo?.monthlyPromptCredits > 0);
+
+        for (const m of rawModels) {
+            if (!m.quotaInfo) continue;
+            models.push({
+                displayName: m.label || 'Unknown',
+                model: m.modelOrAlias?.model || 'unknown',
+                remainingPercentage: Math.round((m.quotaInfo.remainingFraction ?? 0) * 100),
+                resetTime: m.quotaInfo.resetTime || null
+            });
+        }
+
+        const groupStats = this.calculateGroupStats(models);
+        const claudeGroup = groupStats['Claude/GPT'];
+        let claudeRemaining = 0;
+        let claudeResetTime: string | null = null;
+
+        if (claudeGroup) {
+            claudeRemaining = claudeGroup.min;
+            claudeResetTime = claudeGroup.reset;
+        } else if (models.length > 0) {
+            const lowest = models.reduce((min, curr) =>
+                curr.remainingPercentage < min.remainingPercentage ? curr : min
+            );
+            claudeRemaining = lowest.remainingPercentage;
+            claudeResetTime = lowest.resetTime;
+        }
+
+        console.log(`ReRevolve: [${email}] 로컬 LS 쿼터 조회 성공 (${models.length}개 모델)`);
+
+        return {
+            email,
+            isPaidAccount,
+            claudeRemaining,
+            claudeResetTime: this.formatResetTime(claudeResetTime),
+            claudeResetTimeRaw: claudeResetTime,
+            geminiProRemaining: groupStats['Gemini Pro']?.min ?? 100,
+            geminiFlashRemaining: groupStats['Gemini Flash']?.min ?? 100,
+            models,
+            lastUpdated: new Date()
+        };
+    }
+
+    // ========== LS 프로세스 탐지 ==========
+
+    private async findLsProcess(): Promise<{ port: number; csrf: string } | null> {
+        try {
+            const name = process.platform === 'win32' ? 'language_server_windows_x64.exe'
+                : process.platform === 'darwin' ? `language_server_macos${process.arch === 'arm64' ? '_arm' : ''}`
+                : `language_server_linux${process.arch === 'arm64' ? '_arm' : '_x64'}`;
+
+            let pid: number;
+            let csrf: string;
+
+            if (process.platform === 'win32') {
+                const cmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name='${name}'\\" | Select-Object ProcessId,CommandLine | ConvertTo-Json"`;
+                const { stdout } = await execAsync(cmd, { timeout: 5000 });
+                let data = JSON.parse(stdout.trim());
+                if (Array.isArray(data)) {
+                    data = data.filter((d: any) => {
+                        const c = (d.CommandLine || '').toLowerCase();
+                        return c.includes('\\antigravity\\') || c.includes('/antigravity/');
+                    });
+                    if (data.length === 0) return null;
+                    data = data[0];
+                }
+                const cmdLine = data.CommandLine || '';
+                pid = data.ProcessId;
+                const tokenMatch = cmdLine.match(/--csrf_token[=\s]+([a-f0-9\-]+)/i);
+                if (!pid || !tokenMatch?.[1]) return null;
+                csrf = tokenMatch[1];
+            } else {
+                const cmd = process.platform === 'darwin' ? `pgrep -fl ${name}` : `pgrep -af ${name}`;
+                const { stdout } = await execAsync(cmd, { timeout: 5000 });
+                const line = stdout.split('\n').find(l => l.includes('--csrf_token'));
+                if (!line) return null;
+                const parts = line.trim().split(/\s+/);
+                pid = parseInt(parts[0], 10);
+                const tokenMatch = line.match(/--csrf_token[=\s]+([a-zA-Z0-9\-]+)/);
+                csrf = tokenMatch ? tokenMatch[1] : '';
+            }
+
+            if (!csrf) return null;
+
+            // 리스닝 포트 찾기
+            const ports = await this.getListeningPorts(pid);
+            for (const port of ports) {
+                const ok = await this.testLsPort(port, csrf);
+                if (ok) return { port, csrf };
+            }
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    private async getListeningPorts(pid: number): Promise<number[]> {
+        try {
+            let cmd: string;
+            if (process.platform === 'win32') {
+                cmd = `powershell -NoProfile -Command "Get-NetTCPConnection -OwningProcess ${pid} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort | ConvertTo-Json"`;
+            } else if (process.platform === 'darwin') {
+                cmd = `lsof -nP -a -iTCP -sTCP:LISTEN -p ${pid}`;
+            } else {
+                cmd = `ss -tlnp 2>/dev/null | grep "pid=${pid}"`;
+            }
+            const { stdout } = await execAsync(cmd, { timeout: 5000 });
+
+            const ports: number[] = [];
+            if (process.platform === 'win32') {
+                try {
+                    const data = JSON.parse(stdout.trim());
+                    const arr = Array.isArray(data) ? data : [data];
+                    for (const p of arr) {
+                        if (typeof p === 'number') ports.push(p);
+                    }
+                } catch { /* ignore */ }
+            } else {
+                for (const line of stdout.split('\n')) {
+                    const m = line.match(/:(\d+)\s/);
+                    if (m) ports.push(parseInt(m[1], 10));
+                }
+            }
+            return ports;
+        } catch {
+            return [];
+        }
+    }
+
+    private testLsPort(port: number, csrf: string): Promise<boolean> {
+        return new Promise(resolve => {
+            const req = http.request(
+                {
+                    hostname: '127.0.0.1',
+                    port,
+                    path: '/exa.language_server_pb.LanguageServerService/GetUnleashData',
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Codeium-Csrf-Token': csrf,
+                        'Connect-Protocol-Version': '1',
+                    },
+                    timeout: 3000,
+                },
+                res => {
+                    let body = '';
+                    res.on('data', (c: Buffer) => (body += c));
+                    res.on('end', () => {
+                        resolve(res.statusCode === 200);
+                    });
+                }
+            );
+            req.on('error', () => resolve(false));
+            req.on('timeout', () => { req.destroy(); resolve(false); });
+            req.write(JSON.stringify({ wrapper_data: {} }));
+            req.end();
+        });
+    }
+
+    private callLocalApi(port: number, csrf: string, path: string, body: object): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const payload = JSON.stringify(body);
+            const req = http.request(
+                {
+                    hostname: '127.0.0.1',
+                    port,
+                    path,
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Content-Length': Buffer.byteLength(payload),
+                        'Connect-Protocol-Version': '1',
+                        'X-Codeium-Csrf-Token': csrf,
+                    },
+                    timeout: 5000,
+                },
+                res => {
+                    let raw = '';
+                    res.on('data', (c: Buffer) => (raw += c));
+                    res.on('end', () => {
+                        if (res.statusCode && res.statusCode >= 400) {
+                            reject(new Error(`HTTP ${res.statusCode}`));
+                            return;
+                        }
+                        try { resolve(JSON.parse(raw)); }
+                        catch { reject(new Error('Invalid JSON')); }
+                    });
+                }
+            );
+            req.on('error', reject);
+            req.on('timeout', () => { req.destroy(); reject(new Error('Timeout')); });
+            req.write(payload);
+            req.end();
+        });
     }
 }
