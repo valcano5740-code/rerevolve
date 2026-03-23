@@ -2,7 +2,7 @@
   "name": "rerevolve-quota-manager",
   "displayName": "ReRevolve Quota Manager",
   "description": "Antigravity 다중 계정 Claude 쿼터 관리 확장프로그램",
-  "version": "7.2.1",
+  "version": "8.0.0",
   "publisher": "rerevolve",
   "engines": {
     "vscode": "^1.85.0"
@@ -10,7 +10,9 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": ["onStartupFinished"],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./dist/extension.js",
   "icon": "assets/icon.png",
   "contributes": {
@@ -99,6 +101,16 @@
           "group": "navigation@3"
         }
       ]
+    },
+    "configuration": {
+      "title": "ReRevolve",
+      "properties": {
+        "rerevolve.autoAcceptEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-Accept 활성화 상태 (모든 세션 동기화)"
+        }
+      }
     }
   },
   "scripts": {
@@ -115,6 +127,8 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "sql.js": "^1.13.0"
+    "@types/ws": "^8.18.1",
+    "sql.js": "^1.13.0",
+    "ws": "^8.20.0"
   }
 }

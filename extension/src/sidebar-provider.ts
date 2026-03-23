@@ -37,6 +37,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     /**
+     * Auto-Accept 상태를 웹뷰에 전달 (외부에서 호출 가능)
+     */
+    public updateAutoAcceptStatus(enabled: boolean): void {
+        this._view?.webview.postMessage({
+            command: 'autoAcceptStatus',
+            enabled
+        });
+    }
+
+    /**
      * 활동 로그 추가 및 웹뷰로 전송
      */
     private addLog(message: string, type: 'info' | 'success' | 'error' = 'info'): void {
@@ -123,6 +133,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     break;
                 case 'getInitialData':
                     this.sendDataToWebview();
+                    // 초기 로드 시 Auto-Accept 상태도 전달
+                    this.updateAutoAcceptStatus(this.autoAcceptService.isEnabled);
                     break;
                 case 'clearLogs':
                     this.activityLogs = [];
@@ -152,17 +164,15 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     await this.importData();
                     break;
                 case 'toggleAutoAccept':
-                    const isEnabled = this.autoAcceptService.toggle();
-                    this._view?.webview.postMessage({
-                        command: 'autoAcceptStatus',
-                        enabled: isEnabled
+                    this.autoAcceptService.toggle().then(enabled => {
+                        this.updateAutoAcceptStatus(enabled);
                     });
                     break;
                 case 'setupCDP':
-                    vscode.window.showInformationMessage('CDP 설정은 안정성 모드에서는 사용되지 않습니다.');
+                    this.autoAcceptService.setupCDP();
                     break;
                 case 'removeCDP':
-                    vscode.window.showInformationMessage('CDP 제거는 안정성 모드에서는 사용되지 않습니다.');
+                    this.autoAcceptService.removeCDP();
                     break;
                 case 'openRules':
                     const rulesPath = path.join(process.env.USERPROFILE || '', '.gemini', 'GEMINI.md');

@@ -23,10 +23,11 @@ let accountSwitcher: AccountSwitcher;
 /**
  * Status Bar 아이템 상태 업데이트 (Auto-Accept)
  */
-function updateStatusBarItem(enabled: boolean): void {
+function updateStatusBarItem(enabled: boolean, cdp: boolean = false): void {
     if (enabled) {
-        statusBarItem.text = '$(rocket) Auto-Accept: ON';
-        statusBarItem.tooltip = 'ReRevolve Auto-Accept 활성 상태\n클릭하여 비활성화 (Ctrl+Alt+Shift+A)';
+        const cdpLabel = cdp ? ' (CDP)' : '';
+        statusBarItem.text = `$(rocket) Auto-Accept: ON${cdpLabel}`;
+        statusBarItem.tooltip = `ReRevolve Auto-Accept 활성 상태${cdpLabel}\n클릭하여 비활성화 (Ctrl+Alt+Shift+A)`;
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
     } else {
         statusBarItem.text = '$(debug-stop) Auto-Accept: OFF';
@@ -147,8 +148,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(quotaStatusBarItem);
 
     // Auto-Accept 상태 변경 시 StatusBar 업데이트 (설정 연동은 서비스 내부에서 처리)
-    autoAcceptService.onStatusChange((enabled) => {
-        updateStatusBarItem(enabled);
+    autoAcceptService.onStatusChange(({ enabled, cdp }) => {
+        updateStatusBarItem(enabled, cdp);
+        // 사이드바에도 상태 전달
+        if (sidebarProvider) {
+            sidebarProvider.updateAutoAcceptStatus(enabled);
+        }
     });
 
     // 사이드바 등록

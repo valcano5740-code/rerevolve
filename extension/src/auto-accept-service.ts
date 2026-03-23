@@ -1,35 +1,36 @@
 /**
- * Auto-Accept Service v7.0.0 - Auto-Run 패치 통합
+ * Auto-Accept Service v8.0.0 - CDP 통합 + 세션 동기화
  * 
- * v6.9.0 (폴링 방식) + Better Antigravity 참고 JS 패치 (근본 수정) 하이브리드
+ * v7.0.0 (명령어 폴링 + Auto-Run 패치) + CDP DOM 클릭 (AAA 기반) 통합
  * 
  * 설계 원칙:
+ * - 이중 보호: CDP DOM 클릭 + VS Code 명령어 폴링 병행
+ * - 세션 동기화: globalState → Configuration으로 전환, 모든 창에서 동기화
+ * - CDP graceful fallback: CDP 불가 시 기존 명령어 폴링만 사용
  * - 비차단 poll: await 사용 금지 → UI 프리징 방지
- * - globalState: 재시작 시 ON/OFF 상태 복원
  * - EventEmitter: 정식 VS Code 이벤트 패턴
- * - 10개 Accept 명령어: 모든 수락 UI 자동 처리
- * - 설정 토글 연동: ON 시 settings.json 주입 + browserAllowlist 생성, OFF 시 원복
- * - Auto-Run 패치: Antigravity JS 파일에 누락된 useEffect 주입 (근본 수정)
+ * - Auto-Run 패치: Antigravity JS 파일에 누락된 useEffect 주입
  */
 
 import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
-import { autoApply, PatchResult } from './auto-run-patcher';
+import { autoApply } from './auto-run-patcher';
+import { CdpSetupService } from './cdp-setup-service';
+import { CDPHandler } from './cdp-handler';
 
-// ===== Accept 명령어 목록 (v6.8.0 확장) =====
-// ⚠️ terminalCommand.run은 "실행" 명령이라 자동 호출 금지
+// ===== Accept 명령어 목록 =====
 const ACCEPT_COMMANDS = [
-    'antigravity.agent.acceptAgentStep',              // 에이전트 스텝 승인 (Accept All)
-    'antigravity.terminalCommand.accept',              // 터미널 명령 승인 (alt+enter)
-    'antigravity.command.accept',                      // 일반 명령 승인 (ctrl+enter)
-    'antigravity.prioritized.agentAcceptAllInFile',    // 파일 내 전체 변경 수락
-    'antigravity.prioritized.agentAcceptFocusedHunk',  // 포커스된 Hunk 수락
-    'antigravity.prioritized.supercompleteAccept',     // Supercomplete 수락
-    'antigravity.acceptCompletion',                    // 자동완성 수락
-    'antigravity.prioritized.terminalSuggestion.accept', // 터미널 제안 수락
-    'antigravity.prioritized.tabJumpAccept',           // Tab Jump 수락
-    'antigravity.cascade.acceptSuggestedAction'        // Cascade 제안 수락
+    'antigravity.agent.acceptAgentStep',
+    'antigravity.terminalCommand.accept',
+    'antigravity.command.accept',
+    'antigravity.prioritized.agentAcceptAllInFile',
+    'antigravity.prioritized.agentAcceptFocusedHunk',
+    'antigravity.prioritized.supercompleteAccept',
+    'antigravity.acceptCompletion',
+    'antigravity.prioritized.terminalSuggestion.accept',
+    'antigravity.prioritized.tabJumpAccept',
+    'antigravity.cascade.acceptSuggestedAction'
 ];
 
 // ===== Auto-Accept가 관리하는 설정 키 =====
@@ -41,62 +42,103 @@ const MANAGED_SETTINGS: Record<string, { on: any; off: any }> = {
     'security.workspace.trust.untrustedFiles': { on: 'open', off: undefined }
 };
 
+// 세션 동기화용 Configuration 키
+const CONFIG_KEY = 'rerevolve.autoAcceptEnabled';
 const STATE_KEY = 'autoAcceptEnabled';
-const POLL_INTERVAL = 700; // 700ms: 1000ms(안정)와 200ms(빠름)의 절충
+const POLL_INTERVAL = 700;
 
 export class AutoAcceptService implements vscode.Disposable {
     private _enabled = false;
     private pollTimer: NodeJS.Timeout | null = null;
     private globalState: vscode.Memento;
+    private cdpHandler: CDPHandler;
+    private cdpConnected = false;
+    private configChangeDisposable: vscode.Disposable | null = null;
 
-    // 상태 변경 이벤트 (정식 VS Code EventEmitter 패턴)
-    private readonly _onStatusChange = new vscode.EventEmitter<boolean>();
+    // 상태 변경 이벤트
+    private readonly _onStatusChange = new vscode.EventEmitter<{ enabled: boolean; cdp: boolean }>();
     public readonly onStatusChange = this._onStatusChange.event;
 
     constructor(globalState: vscode.Memento) {
         this.globalState = globalState;
+        this.cdpHandler = new CDPHandler((msg) => console.log(`ReRevolve: ${msg}`));
+
+        // 다른 창에서 설정 변경 감지 → 동기화
+        this.configChangeDisposable = vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('rerevolve.autoAcceptEnabled')) {
+                const config = vscode.workspace.getConfiguration('rerevolve');
+                const shouldBeEnabled = config.get<boolean>('autoAcceptEnabled', false);
+
+                if (shouldBeEnabled && !this._enabled) {
+                    this.start(true); // 동기화에 의한 시작 (설정 재기록 방지)
+                } else if (!shouldBeEnabled && this._enabled) {
+                    this.stop(true); // 동기화에 의한 중지
+                }
+            }
+        });
     }
 
     get isEnabled(): boolean {
         return this._enabled;
     }
 
+    get isCDPConnected(): boolean {
+        return this.cdpConnected;
+    }
+
     /**
-     * Auto-Accept 시작 + 설정 자동 주입
+     * Auto-Accept 시작 + CDP + 설정 자동 주입
      */
-    async start(): Promise<void> {
+    async start(fromSync = false): Promise<void> {
         if (this._enabled) return;
 
         this._enabled = true;
-        this._onStatusChange.fire(true);
+
+        // 세션 동기화: Configuration에 상태 기록 (동기화에 의한 호출이 아닐 때만)
+        if (!fromSync) {
+            const config = vscode.workspace.getConfiguration('rerevolve');
+            config.update('autoAcceptEnabled', true, vscode.ConfigurationTarget.Global)
+                .then(() => {}, () => {});
+        }
+
+        // globalState에도 백업
         this.globalState.update(STATE_KEY, true);
 
-        // 설정 자동 주입 (ON 시)
+        // 설정 자동 주입
         this.applySettings();
 
-        // Auto-Run 패치 적용 ("Always Proceed" 버그 근본 수정)
+        // Auto-Run 패치
         this.applyAutoRunPatch();
 
-        // 비차단 폴링 시작 (await 사용 안 함 → UI 프리징 방지)
+        // CDP 연결 시도 (non-blocking)
+        this.startCDP();
+
+        // 비차단 폴링 시작 (CDP와 병행)
         this.pollTimer = setInterval(() => {
             if (!this._enabled) return;
             this.poll();
         }, POLL_INTERVAL);
 
-        console.log(`ReRevolve: Auto-Accept ON (${POLL_INTERVAL}ms, ${ACCEPT_COMMANDS.length}개 명령어 + Auto-Run 패치)`);
+        this._onStatusChange.fire({ enabled: true, cdp: this.cdpConnected });
+        console.log(`ReRevolve: Auto-Accept ON (${POLL_INTERVAL}ms, CDP ${this.cdpConnected ? 'ON' : 'pending'})`);
     }
 
     /**
-     * Auto-Accept 중지 + 설정 원복
+     * Auto-Accept 중지 + CDP 종료 + 설정 원복
      */
-    stop(): void {
+    async stop(fromSync = false): Promise<void> {
         if (!this._enabled) return;
 
         this._enabled = false;
-        this._onStatusChange.fire(false);
-        this.globalState.update(STATE_KEY, false);
 
-        // 설정 원복 (OFF 시)
+        // 세션 동기화
+        if (!fromSync) {
+            const config = vscode.workspace.getConfiguration('rerevolve');
+            config.update('autoAcceptEnabled', false, vscode.ConfigurationTarget.Global)
+                .then(() => {}, () => {});
+        }
+
+        this.globalState.update(STATE_KEY, false);
         this.revertSettings();
 
         if (this.pollTimer) {
@@ -104,30 +146,78 @@ export class AutoAcceptService implements vscode.Disposable {
             this.pollTimer = null;
         }
 
+        // CDP 중지
+        if (this.cdpConnected) {
+            await this.cdpHandler.stop();
+            this.cdpConnected = false;
+        }
+
+        this._onStatusChange.fire({ enabled: false, cdp: false });
         console.log('ReRevolve: Auto-Accept OFF (설정 원복 완료)');
     }
 
     /**
      * 토글
      */
-    toggle(): boolean {
+    async toggle(): Promise<boolean> {
         if (this._enabled) {
-            this.stop();
+            await this.stop();
             vscode.window.showInformationMessage('🛑 Auto-Accept OFF (설정 원복됨)');
         } else {
-            this.start();
-            vscode.window.showInformationMessage(`🚀 Auto-Accept ON (${POLL_INTERVAL}ms, 설정 자동 적용)`);
+            // CDP 설정 확인 (첫 실행 시)
+            await CdpSetupService.ensureSetup(this.globalState);
+            await this.start();
+            const cdpStatus = this.cdpConnected ? ' (CDP 연결)' : '';
+            vscode.window.showInformationMessage(`🚀 Auto-Accept ON${cdpStatus}`);
         }
         return this._enabled;
     }
 
     /**
-     * 저장된 상태 복원 (확장 시작 시 호출)
+     * 저장된 상태 복원
      */
     restoreState(): void {
-        const saved = this.globalState.get<boolean>(STATE_KEY, false);
-        if (saved) {
-            this.start();
+        // Configuration 우선, globalState 폴백
+        const config = vscode.workspace.getConfiguration('rerevolve');
+        const configEnabled = config.get<boolean>('autoAcceptEnabled', false);
+        const stateEnabled = this.globalState.get<boolean>(STATE_KEY, false);
+
+        if (configEnabled || stateEnabled) {
+            this.start(configEnabled); // config에서 온 경우 동기화 재기록 방지
+        }
+    }
+
+    /**
+     * CDP 설정 (사이드바에서 호출)
+     */
+    async setupCDP(): Promise<void> {
+        await CdpSetupService.setupAll();
+        vscode.window.showInformationMessage('✅ CDP 설정 완료! Antigravity 재시작 후 적용됩니다.');
+    }
+
+    /**
+     * CDP 설정 제거 (사이드바에서 호출)
+     */
+    async removeCDP(): Promise<void> {
+        await CdpSetupService.removeSetup(this.globalState);
+    }
+
+    // ===== CDP 연결 =====
+    private async startCDP(): Promise<void> {
+        try {
+            const available = await this.cdpHandler.isCDPAvailable();
+            if (available) {
+                await this.cdpHandler.start({ ide: 'antigravity', pollInterval: 1000 });
+                this.cdpConnected = true;
+                this._onStatusChange.fire({ enabled: true, cdp: true });
+                console.log('ReRevolve: CDP 연결 성공');
+            } else {
+                this.cdpConnected = false;
+                console.log('ReRevolve: CDP 미가용 (명령어 폴링만 사용)');
+            }
+        } catch (err) {
+            this.cdpConnected = false;
+            console.log(`ReRevolve: CDP 연결 실패 (명령어 폴링만 사용): ${err}`);
         }
     }
 
@@ -136,7 +226,7 @@ export class AutoAcceptService implements vscode.Disposable {
         for (const cmd of ACCEPT_COMMANDS) {
             vscode.commands.executeCommand(cmd).then(
                 () => { },
-                () => { } // 승인할 것이 없으면 조용히 무시
+                () => { }
             );
         }
     }
@@ -186,7 +276,6 @@ export class AutoAcceptService implements vscode.Disposable {
                     .then(() => { }, () => { });
             }
 
-            // browserAllowlist.txt 삭제
             const userProfile = process.env.USERPROFILE || process.env.HOME || '';
             const allowlistPath = path.join(userProfile, '.gemini', 'antigravity', 'browserAllowlist.txt');
             if (fs.existsSync(allowlistPath)) {
@@ -198,7 +287,7 @@ export class AutoAcceptService implements vscode.Disposable {
         }
     }
 
-    // ===== Auto-Run 패치 (JS 파일 수정) =====
+    // ===== Auto-Run 패치 =====
     private applyAutoRunPatch(): void {
         autoApply().then(results => {
             for (const r of results) {
@@ -223,5 +312,8 @@ export class AutoAcceptService implements vscode.Disposable {
     dispose(): void {
         this.stop();
         this._onStatusChange.dispose();
+        if (this.configChangeDisposable) {
+            this.configChangeDisposable.dispose();
+        }
     }
 }
