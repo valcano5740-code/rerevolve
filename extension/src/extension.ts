@@ -118,7 +118,7 @@ function checkRechargeLocal(): void {
 
 export function activate(context: vscode.ExtensionContext) {
     try {
-    console.log('ReRevolve v7.2: 확장 활성화 시작');
+    console.log('ReRevolve v8.1: 확장 활성화 시작');
 
     // 서비스 초기화
     accountManager = new AccountManager(context);
@@ -379,24 +379,25 @@ export function activate(context: vscode.ExtensionContext) {
         checkRechargeLocal();
     }, 5000);
 
-    // state.vscdb 파일 변경 감시 → 계정 전환 즉시 감지
+    // state.vscdb 파일 변경 감시 → 계정 전환 즉시 감지 (300ms debounce)
     try {
         const dbPath = tokenService.getStateDbPath();
         const fs = require('fs');
         if (fs.existsSync(dbPath)) {
             let debounceTimer: NodeJS.Timeout | null = null;
             const watcher = fs.watch(dbPath, () => {
-                // 파일 변경이 빠르게 여러 번 발생하므로 2초 디바운스
+                // 300ms debounce (즉각적 반응)
                 if (debounceTimer) clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(async () => {
-                    console.log('ReRevolve: state.vscdb 변경 감지 → 활성 계정 재감지');
+                    console.log('ReRevolve: state.vscdb 변경 감지 → 즉각 계정 재감지');
                     tokenService.invalidateCache(); // LS 캐시 무효화
+                    quotaService.invalidateLsCache(); // 쿼터 LS 캐시도 무효화
                     await sidebarProvider.refreshActiveOnly();
                     await refreshActiveQuota();
-                }, 2000);
+                }, 300);
             });
             context.subscriptions.push({ dispose: () => watcher.close() });
-            console.log('ReRevolve: state.vscdb 파일 감시 시작');
+            console.log('ReRevolve: state.vscdb 파일 감시 시작 (300ms debounce)');
         }
     } catch (err) {
         console.error('ReRevolve: state.vscdb 감시 실패', err);

@@ -449,12 +449,23 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
         this.addLog(`✅ ${email} 토큰 획득`, 'success');
 
-        const quota = await this.quotaService.fetchQuota(email, token);
+        // 활성 계정: 로컬 LS API 우선 시도 (빠르고 부하 없음)
+        let quota = null;
+        if (account.isActive) {
+            quota = await this.quotaService.fetchQuotaLocal(email);
+            if (quota) {
+                this.addLog(`📊 ${email}: Claude ${quota.claudeRemaining}% (LS)`, 'success');
+            }
+        }
 
-        if (quota.error) {
-            this.addLog(`⚠️ ${email}: ${quota.error}`, 'error');
-        } else {
-            this.addLog(`📊 ${email}: Claude ${quota.claudeRemaining}%`, 'success');
+        // LS 실패 또는 비활성 계정: Google API fallback
+        if (!quota) {
+            quota = await this.quotaService.fetchQuota(email, token);
+            if (quota.error) {
+                this.addLog(`⚠️ ${email}: ${quota.error}`, 'error');
+            } else {
+                this.addLog(`📊 ${email}: Claude ${quota.claudeRemaining}%`, 'success');
+            }
         }
 
         // 쿼터 조회 실패 시 이전 캐시 값 유지 (에러가 있고 값이 무효한 경우)
