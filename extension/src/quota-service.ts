@@ -3,13 +3,12 @@
  *
  * 활성 계정: 로컬 LS GetUserStatus (빠르고 부하 없음)
  * 비활성 계정: 기존 Google CloudCode API (원격)
+ * 
+ * v8.2.0: PowerShell 직접 호출 제거 → LanguageServerClient 캐시 재사용
  */
 
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import * as http from 'http';
-
-const execAsync = promisify(exec);
+import { LanguageServerClient } from './language-server-client';
 
 export interface ModelQuota {
     displayName: string;
@@ -40,50 +39,49 @@ const GROUPS = {
 
 export class QuotaService {
     private readonly API_BASE = 'https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal';
+    private lsClient: LanguageServerClient | null = null;
 
-    // 로컬 LS 프로세스 캐시
-    private cachedLsPort: number | null = null;
-    private cachedLsCsrf: string | null = null;
-    private lsCacheExpiry = 0;
+    /**
+     * LanguageServerClient 설정 (PowerShell 직접 호출 대신 캐시 재사용)
+     */
+    setLsClient(client: LanguageServerClient): void {
+        this.lsClient = client;
+    }
 
     /**
      * 로컬 LS API로 활성 계정 쿼터 조회 (OAuth 토큰 불필요)
+     * LanguageServerClient의 캐시된 서버 정보를 재사용 → PowerShell 0회 호출
      * 성공 시 QuotaResult, 실패 시 null → Google API fallback
      */
     async fetchQuotaLocal(email: string): Promise<QuotaResult | null> {
         try {
-            // LS 프로세스 캐시 (60초)
-            if (!this.cachedLsPort || Date.now() > this.lsCacheExpiry) {
-                const info = await this.findLsProcess();
-                if (!info) {
-                    console.log('ReRevolve: LS 프로세스 미감지 → Google API fallback');
-                    return null;
-                }
-                this.cachedLsPort = info.port;
-                this.cachedLsCsrf = info.csrf;
-                this.lsCacheExpiry = Date.now() + 60000;
+            // LanguageServerClient에서 캐시된 서버 정보 가져오기 (PowerShell 호출 없음)
+            const serverInfo = this.lsClient?.getCachedServerInfo();
+            if (!serverInfo) {
+                console.log('ReRevolve: LS 서버 정보 미캐시 → Google API fallback');
+                return null;
             }
+            const cachedLsPort = serverInfo.port;
+            const cachedLsCsrf = serverInfo.csrfToken;
 
             const data = await this.callLocalApi(
-                this.cachedLsPort!,
-                this.cachedLsCsrf!,
+                cachedLsPort,
+                cachedLsCsrf,
                 '/exa.language_server_pb.LanguageServerService/GetUserStatus',
                 { metadata: { ideName: 'antigravity', extensionName: 'antigravity', locale: 'en' } }
             );
             return this.parseLocalResponse(email, data);
         } catch (err) {
             console.log(`ReRevolve: 로컬 LS 쿼터 조회 실패: ${err} → fallback`);
-            this.cachedLsPort = null;
-            this.lsCacheExpiry = 0;
+            // LS 캐시 무효화는 LanguageServerClient.invalidateCache()에서 처리
+            this.lsClient?.invalidateCache();
             return null;
         }
     }
 
     /** LS 캐시 무효화 (계정 전환 감지 시) */
     invalidateLsCache(): void {
-        this.cachedLsPort = null;
-        this.cachedLsCsrf = null;
-        this.lsCacheExpiry = 0;
+        this.lsClient?.invalidateCache();
     }
 
     /**
@@ -363,121 +361,9 @@ export class QuotaService {
         };
     }
 
-    // ========== LS 프로세스 탐지 ==========
-
-    private async findLsProcess(): Promise<{ port: number; csrf: string } | null> {
-        try {
-            const name = process.platform === 'win32' ? 'language_server_windows_x64.exe'
-                : process.platform === 'darwin' ? `language_server_macos${process.arch === 'arm64' ? '_arm' : ''}`
-                : `language_server_linux${process.arch === 'arm64' ? '_arm' : '_x64'}`;
-
-            let pid: number;
-            let csrf: string;
-
-            if (process.platform === 'win32') {
-                const cmd = `powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name='${name}'\\" | Select-Object ProcessId,CommandLine | ConvertTo-Json"`;
-                const { stdout } = await execAsync(cmd, { timeout: 5000 });
-                let data = JSON.parse(stdout.trim());
-                if (Array.isArray(data)) {
-                    data = data.filter((d: any) => {
-                        const c = (d.CommandLine || '').toLowerCase();
-                        return c.includes('\\antigravity\\') || c.includes('/antigravity/');
-                    });
-                    if (data.length === 0) return null;
-                    data = data[0];
-                }
-                const cmdLine = data.CommandLine || '';
-                pid = data.ProcessId;
-                const tokenMatch = cmdLine.match(/--csrf_token[=\s]+([a-f0-9\-]+)/i);
-                if (!pid || !tokenMatch?.[1]) return null;
-                csrf = tokenMatch[1];
-            } else {
-                const cmd = process.platform === 'darwin' ? `pgrep -fl ${name}` : `pgrep -af ${name}`;
-                const { stdout } = await execAsync(cmd, { timeout: 5000 });
-                const line = stdout.split('\n').find(l => l.includes('--csrf_token'));
-                if (!line) return null;
-                const parts = line.trim().split(/\s+/);
-                pid = parseInt(parts[0], 10);
-                const tokenMatch = line.match(/--csrf_token[=\s]+([a-zA-Z0-9\-]+)/);
-                csrf = tokenMatch ? tokenMatch[1] : '';
-            }
-
-            if (!csrf) return null;
-
-            // 리스닝 포트 찾기
-            const ports = await this.getListeningPorts(pid);
-            for (const port of ports) {
-                const ok = await this.testLsPort(port, csrf);
-                if (ok) return { port, csrf };
-            }
-            return null;
-        } catch {
-            return null;
-        }
-    }
-
-    private async getListeningPorts(pid: number): Promise<number[]> {
-        try {
-            let cmd: string;
-            if (process.platform === 'win32') {
-                cmd = `powershell -NoProfile -Command "Get-NetTCPConnection -OwningProcess ${pid} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort | ConvertTo-Json"`;
-            } else if (process.platform === 'darwin') {
-                cmd = `lsof -nP -a -iTCP -sTCP:LISTEN -p ${pid}`;
-            } else {
-                cmd = `ss -tlnp 2>/dev/null | grep "pid=${pid}"`;
-            }
-            const { stdout } = await execAsync(cmd, { timeout: 5000 });
-
-            const ports: number[] = [];
-            if (process.platform === 'win32') {
-                try {
-                    const data = JSON.parse(stdout.trim());
-                    const arr = Array.isArray(data) ? data : [data];
-                    for (const p of arr) {
-                        if (typeof p === 'number') ports.push(p);
-                    }
-                } catch { /* ignore */ }
-            } else {
-                for (const line of stdout.split('\n')) {
-                    const m = line.match(/:(\d+)\s/);
-                    if (m) ports.push(parseInt(m[1], 10));
-                }
-            }
-            return ports;
-        } catch {
-            return [];
-        }
-    }
-
-    private testLsPort(port: number, csrf: string): Promise<boolean> {
-        return new Promise(resolve => {
-            const req = http.request(
-                {
-                    hostname: '127.0.0.1',
-                    port,
-                    path: '/exa.language_server_pb.LanguageServerService/GetUnleashData',
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Codeium-Csrf-Token': csrf,
-                        'Connect-Protocol-Version': '1',
-                    },
-                    timeout: 3000,
-                },
-                res => {
-                    let body = '';
-                    res.on('data', (c: Buffer) => (body += c));
-                    res.on('end', () => {
-                        resolve(res.statusCode === 200);
-                    });
-                }
-            );
-            req.on('error', () => resolve(false));
-            req.on('timeout', () => { req.destroy(); resolve(false); });
-            req.write(JSON.stringify({ wrapper_data: {} }));
-            req.end();
-        });
-    }
+    // ========== LS 프로세스 탐지 (v8.2.0: PowerShell 호출 제거됨) ==========
+    // findLsProcess, getListeningPorts, testLsPort 삭제
+    // → LanguageServerClient.getCachedServerInfo()로 대체
 
     private callLocalApi(port: number, csrf: string, path: string, body: object): Promise<any> {
         return new Promise((resolve, reject) => {

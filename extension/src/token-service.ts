@@ -25,17 +25,29 @@ async function getSqlJs(): Promise<Awaited<ReturnType<typeof initSqlJs>>> {
 }
 
 // Antigravity OAuth 클라이언트 자격증명
-// .credentials.json 파일 또는 환경변수에서 로드
-const credentialsPath = path.join(__dirname, '..', '.credentials.json');
+// 우선순위: ~/.rerevolve/credentials.json > 임베디드 기본값 > 환경변수
+const REREVOLVE_HOME = path.join(os.homedir(), '.rerevolve');
+const credentialsPath = path.join(REREVOLVE_HOME, 'credentials.json');
+
+// 임베디드 기본값 (VSIX 배포 시 파일 없이도 동작)
+const EMBEDDED_CLIENT_ID = '1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com';
+const EMBEDDED_CLIENT_SECRET = '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';
+
 let ANTIGRAVITY_CLIENT_ID = '';
 let ANTIGRAVITY_CLIENT_SECRET = '';
 try {
-    const creds = require(credentialsPath);
-    ANTIGRAVITY_CLIENT_ID = creds.clientId || process.env.ANTIGRAVITY_CLIENT_ID || '';
-    ANTIGRAVITY_CLIENT_SECRET = creds.clientSecret || process.env.ANTIGRAVITY_CLIENT_SECRET || '';
+    if (fs.existsSync(credentialsPath)) {
+        const creds = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
+        ANTIGRAVITY_CLIENT_ID = creds.clientId || EMBEDDED_CLIENT_ID;
+        ANTIGRAVITY_CLIENT_SECRET = creds.clientSecret || EMBEDDED_CLIENT_SECRET;
+    } else {
+        // 파일 없으면 임베디드 값 사용
+        ANTIGRAVITY_CLIENT_ID = EMBEDDED_CLIENT_ID;
+        ANTIGRAVITY_CLIENT_SECRET = EMBEDDED_CLIENT_SECRET;
+    }
 } catch {
-    ANTIGRAVITY_CLIENT_ID = process.env.ANTIGRAVITY_CLIENT_ID || '';
-    ANTIGRAVITY_CLIENT_SECRET = process.env.ANTIGRAVITY_CLIENT_SECRET || '';
+    ANTIGRAVITY_CLIENT_ID = EMBEDDED_CLIENT_ID;
+    ANTIGRAVITY_CLIENT_SECRET = EMBEDDED_CLIENT_SECRET;
 }
 
 interface StoredCredential {
@@ -50,7 +62,6 @@ export class TokenService {
     private cachedToken: string | null = null;
     private tokenExpiry: Date | null = null;
     private lsClient: LanguageServerClient;
-    private lsEverSucceeded = false; // LS 첫 성공 전에는 vscdb 우선
 
     constructor(private globalState: vscode.Memento) {
         this.lsClient = new LanguageServerClient();
@@ -483,39 +494,35 @@ export class TokenService {
 
     /**
      * 현재 Antigravity에 로그인된 이메일 추출
-     * LS 첫 성공 전: vscdb 먼저 (50ms) → LS 백그라운드
-     * LS 첫 성공 후: LS 먼저 (실시간) → vscdb fallback
+     * 3단계 전략:
+     *  1. getEmailQuick() — 캐시된 서버 정보로 HTTP만 호출 (PowerShell 없음, ~50ms)
+     *  2. getCurrentEmail() — 서버 재감지 포함 full detect (~3-5초)  
+     *  3. vscdb fallback — state.vscdb 파일 파싱
      */
     async getCurrentLoggedInEmail(): Promise<string | null> {
-        // 빠른 경로: LS 성공 이력 없으면 vscdb 먼저 (초기 3-9초 블로킹 방지)
-        if (!this.lsEverSucceeded) {
-            const vscdbEmail = await this.getCurrentLoggedInEmailFromVscdb();
-            if (vscdbEmail) {
-                console.log(`ReRevolve: Fast path - email from vscdb: ${vscdbEmail}`);
-                // 백그라운드에서 LS 시도 (성공하면 플래그 설정)
-                this.lsClient.getCurrentEmail().then(email => {
-                    if (email) {
-                        this.lsEverSucceeded = true;
-                        console.log(`ReRevolve: LS now available, switching to LS-first path`);
-                    }
-                }).catch(() => {});
-                return vscdbEmail;
+        // 1단계: 경량 HTTP 조회 (LS 서버 캐시 있으면 즉시 응답)
+        try {
+            const quickEmail = await this.lsClient.getEmailQuick();
+            if (quickEmail) {
+                console.log(`ReRevolve: Quick path - email from LS HTTP: ${quickEmail}`);
+                return quickEmail;
             }
+        } catch {
+            // 무시 — 2단계로
         }
 
-        // LS 우선 경로 (LS 성공 이력 있거나 vscdb도 실패한 경우)
+        // 2단계: Full LS detect (PowerShell 포함, 서버 재감지)
         try {
             const email = await this.lsClient.getCurrentEmail();
             if (email) {
-                this.lsEverSucceeded = true;
-                console.log(`ReRevolve: Active account from Language Server: ${email}`);
+                console.log(`ReRevolve: Full path - email from LS: ${email}`);
                 return email;
             }
         } catch {
             console.log('ReRevolve: Language Server not available, falling back to vscdb');
         }
 
-        // 최종 fallback: vscdb
+        // 3단계: vscdb fallback
         return this.getCurrentLoggedInEmailFromVscdb();
     }
 
@@ -605,7 +612,7 @@ export class TokenService {
     async captureCurrentToken(email: string): Promise<boolean> {
         try {
             if (!ANTIGRAVITY_CLIENT_ID || !ANTIGRAVITY_CLIENT_SECRET) {
-                vscode.window.showErrorMessage('ReRevolve: OAuth 자격증명이 없습니다. .credentials.json을 확인하세요.');
+                vscode.window.showErrorMessage(`ReRevolve: OAuth 자격증명이 없습니다. ${credentialsPath} 파일을 확인하세요.`);
                 return false;
             }
 

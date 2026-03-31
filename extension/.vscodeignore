@@ -1,0 +1,15 @@
+src/**
+!dist/extension.js
+!dist/cdp-auto-accept.js
+!dist/sql-wasm.wasm
+node_modules/**
+.env
+.credentials.json
+*.ts
+tsconfig.json
+esbuild.js
+**/*.map
+*.vsix
+.gitignore
+test-*
+scan_*

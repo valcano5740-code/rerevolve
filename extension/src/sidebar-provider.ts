@@ -587,16 +587,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <title>ReRevolve</title>
     <style>
         :root {
-            --bg-primary: #1e1e1e;
-            --bg-secondary: #252526;
-            --bg-tertiary: #2d2d2d;
-            --text-primary: #cccccc;
-            --text-secondary: #858585;
-            --accent-green: #4ec9b0;
-            --accent-yellow: #dcdcaa;
-            --accent-red: #f14c4c;
-            --accent-blue: #569cd6;
-            --border-color: #3c3c3c;
+            --bg-primary: var(--vscode-sideBar-background, #1e1e1e);
+            --bg-secondary: var(--vscode-editor-background, #252526);
+            --bg-tertiary: var(--vscode-input-background, #2d2d2d);
+            --text-primary: var(--vscode-foreground, #cccccc);
+            --text-secondary: var(--vscode-descriptionForeground, #858585);
+            --accent-green: var(--vscode-terminal-ansiGreen, #4ec9b0);
+            --accent-yellow: var(--vscode-terminal-ansiYellow, #dcdcaa);
+            --accent-red: var(--vscode-errorForeground, #f14c4c);
+            --accent-blue: var(--vscode-button-background, #569cd6);
+            --border-color: var(--vscode-panel-border, #3c3c3c);
         }
         
         * {
@@ -606,10 +606,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
         
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif);
             background: var(--bg-primary);
             color: var(--text-primary);
-            font-size: 13px;
+            font-size: var(--vscode-font-size, 13px);
             padding: 8px;
         }
         
@@ -644,7 +644,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
         
         .btn:hover {
-            background: #3c3c3c;
+            background: var(--vscode-toolbar-hoverBackground, #3c3c3c);
         }
         
         .btn-primary {
@@ -847,7 +847,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         
         .btn-edit-mode.active {
             background: var(--accent-yellow);
-            color: #000;
+            color: var(--vscode-editor-background, #000);
         }
         
         /* 활성 계정 강조 스타일 */
@@ -1040,7 +1040,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             max-height: 400px;
             overflow: hidden;
             transition: max-height 0.3s ease, padding 0.3s ease;
-            background: rgba(0, 0, 0, 0.15);
+            background: var(--vscode-sideBar-background, rgba(0, 0, 0, 0.15));
         }
         
         .settings-content.collapsed {
@@ -1177,7 +1177,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 </head>
 <body>
     <div class="header">
-        <h1>🔄 ReRevolve <span style="font-size:10px;color:#858585;font-weight:normal;">v${version}</span></h1>
+        <h1>🔄 ReRevolve <span style="font-size:10px;color:var(--text-secondary);font-weight:normal;">v${version}</span></h1>
         <div class="header-actions">
             <button class="btn" id="sortBtn" onclick="toggleSort()" title="정렬 (기본/쿼터순)">📊</button>
             <button class="btn btn-edit-mode" id="editModeBtn" onclick="toggleEditMode()" title="순서 변경 모드">✏️</button>

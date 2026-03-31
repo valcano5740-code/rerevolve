@@ -31,12 +31,45 @@ interface UserStatusResponse {
 export class LanguageServerClient {
     private serverInfo: LanguageServerInfo | null = null;
     private lastDetectTime: number = 0;
-    private readonly DETECT_CACHE_MS = 30000; // 30초 (성공 시 캐시 오래 유지)
-    private readonly MAX_RETRIES = 2; // 2회로 축소 (초기 블로킹 단축)
+    private readonly DETECT_CACHE_MS = 60000; // 60초 (PowerShell 호출 최소화)
+    private readonly MAX_RETRIES = 2;
     private readonly RETRY_DELAY_MS = 1000;
+    private detectPromise: Promise<LanguageServerInfo | null> | null = null; // mutex
 
     /**
-     * 현재 활성 계정 이메일 가져오기 (3회 재시도)
+     * 현재 캐시된 LS 서버 정보 반환 (PowerShell 호출 없음)
+     * quota-service에서 재사용하기 위한 getter
+     */
+    getCachedServerInfo(): { port: number; csrfToken: string } | null {
+        return this.serverInfo;
+    }
+
+    /**
+     * 경량 이메일 조회 — 캐시된 서버 정보로 HTTP만 호출 (PowerShell 없음)
+     * 15초 폴링에서 사용. 서버 정보가 없으면 null 반환 (full detect는 하지 않음)
+     */
+    async getEmailQuick(): Promise<string | null> {
+        if (!this.serverInfo) {
+            return null; // 서버 정보 없으면 스킵 (full detect는 getCurrentEmail에서)
+        }
+
+        try {
+            const status = await this.fetchUserStatus(this.serverInfo);
+            const email = status?.userStatus?.email;
+            if (email) {
+                return email.toLowerCase();
+            }
+        } catch {
+            // HTTP 실패 → 서버가 죽었을 수 있으므로 캐시 무효화
+            this.serverInfo = null;
+            this.lastDetectTime = 0;
+        }
+
+        return null;
+    }
+
+    /**
+     * 현재 활성 계정 이메일 가져오기 (2회 재시도, 서버 재감지 포함)
      */
     async getCurrentEmail(): Promise<string | null> {
         let lastError: unknown = null;
@@ -96,14 +129,28 @@ export class LanguageServerClient {
 
     /**
      * Language Server 감지 (포트 + CSRF 토큰)
-     * 모든 창이 같은 계정을 공유하므로 첫 번째 프로세스 사용
+     * mutex로 동시 호출 방지 — PowerShell 프로세스 폭증 차단
      */
     private async detectServer(): Promise<LanguageServerInfo | null> {
-        // 캐시된 정보가 있고 30초 이내면 재사용
+        // 캐시된 정보가 있고 120초 이내면 재사용
         if (this.serverInfo && Date.now() - this.lastDetectTime < this.DETECT_CACHE_MS) {
             return this.serverInfo;
         }
 
+        // 이미 감지 중이라면 기존 Promise 재사용 (동시 호출 방지)
+        if (this.detectPromise) {
+            return this.detectPromise;
+        }
+
+        this.detectPromise = this._detectServerImpl();
+        try {
+            return await this.detectPromise;
+        } finally {
+            this.detectPromise = null;
+        }
+    }
+
+    private async _detectServerImpl(): Promise<LanguageServerInfo | null> {
         try {
             // Windows: PowerShell로 language_server 프로세스 명령줄 추출
             if (process.platform === 'win32') {
@@ -145,6 +192,7 @@ export class LanguageServerClient {
 
         return null;
     }
+
 
 
     /**

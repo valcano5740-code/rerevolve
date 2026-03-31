@@ -10,6 +10,7 @@ import { TokenService } from './token-service';
 import { QuotaService, QuotaResult } from './quota-service';
 import { AutoAcceptService } from './auto-accept-service';
 import { AccountSwitcher } from './account-switcher';
+import { LanguageServerClient } from './language-server-client';
 
 let sidebarProvider: SidebarProvider;
 let autoAcceptService: AutoAcceptService;
@@ -118,7 +119,7 @@ function checkRechargeLocal(): void {
 
 export function activate(context: vscode.ExtensionContext) {
     try {
-    console.log('ReRevolve v8.1: 확장 활성화 시작');
+    console.log('ReRevolve v8.2: 확장 활성화 시작');
 
     // 서비스 초기화
     accountManager = new AccountManager(context);
@@ -126,6 +127,10 @@ export function activate(context: vscode.ExtensionContext) {
     quotaService = new QuotaService();
     autoAcceptService = new AutoAcceptService(context.globalState);
     accountSwitcher = new AccountSwitcher(context);
+
+    // LanguageServerClient를 QuotaService에 주입 (PowerShell 중복 호출 방지)
+    const lsClient = new LanguageServerClient();
+    quotaService.setLsClient(lsClient);
 
     // Status Bar 아이템 생성 (우측 우선순위 높게 배치)
     statusBarItem = vscode.window.createStatusBarItem(
@@ -379,25 +384,25 @@ export function activate(context: vscode.ExtensionContext) {
         checkRechargeLocal();
     }, 5000);
 
-    // state.vscdb 파일 변경 감시 → 계정 전환 즉시 감지 (300ms debounce)
+    // state.vscdb 파일 변경 감시 → 계정 전환 감지 (3초 debounce)
     try {
         const dbPath = tokenService.getStateDbPath();
         const fs = require('fs');
         if (fs.existsSync(dbPath)) {
             let debounceTimer: NodeJS.Timeout | null = null;
             const watcher = fs.watch(dbPath, () => {
-                // 300ms debounce (즉각적 반응)
+                // 3초 debounce (PowerShell 폭증 방지)
                 if (debounceTimer) clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(async () => {
-                    console.log('ReRevolve: state.vscdb 변경 감지 → 즉각 계정 재감지');
-                    tokenService.invalidateCache(); // LS 캐시 무효화
-                    quotaService.invalidateLsCache(); // 쿼터 LS 캐시도 무효화
+                    console.log('ReRevolve: state.vscdb 변경 감지 → 계정 재감지');
+                    tokenService.invalidateCache();
+                    quotaService.invalidateLsCache();
                     await sidebarProvider.refreshActiveOnly();
                     await refreshActiveQuota();
-                }, 300);
+                }, 3000);
             });
             context.subscriptions.push({ dispose: () => watcher.close() });
-            console.log('ReRevolve: state.vscdb 파일 감시 시작 (300ms debounce)');
+            console.log('ReRevolve: state.vscdb 파일 감시 시작 (3s debounce)');
         }
     } catch (err) {
         console.error('ReRevolve: state.vscdb 감시 실패', err);

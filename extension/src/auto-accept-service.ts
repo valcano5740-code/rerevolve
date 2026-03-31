@@ -33,19 +33,11 @@ const ACCEPT_COMMANDS = [
     'antigravity.cascade.acceptSuggestedAction'
 ];
 
-// ===== Auto-Accept가 관리하는 설정 키 =====
-const MANAGED_SETTINGS: Record<string, { on: any; off: any }> = {
-    'cached.allowAgentAccessNonWorkspaceFiles': { on: true, off: undefined },
-    'cached.terminalAutoExecutionPolicy': { on: 'autoExecute', off: undefined },
-    'cached.allowCascadeAccessGitignoreFiles': { on: true, off: undefined },
-    'cached.artifactReviewPolicy': { on: 'autoApply', off: undefined },
-    'security.workspace.trust.untrustedFiles': { on: 'open', off: undefined }
-};
 
 // 세션 동기화용 Configuration 키
 const CONFIG_KEY = 'rerevolve.autoAcceptEnabled';
 const STATE_KEY = 'autoAcceptEnabled';
-const POLL_INTERVAL = 700;
+const POLL_INTERVAL = 5000;
 
 export class AutoAcceptService implements vscode.Disposable {
     private _enabled = false;
@@ -104,8 +96,6 @@ export class AutoAcceptService implements vscode.Disposable {
         // globalState에도 백업
         this.globalState.update(STATE_KEY, true);
 
-        // 설정 자동 주입
-        this.applySettings();
 
         // Auto-Run 패치
         this.applyAutoRunPatch();
@@ -139,7 +129,6 @@ export class AutoAcceptService implements vscode.Disposable {
         }
 
         this.globalState.update(STATE_KEY, false);
-        this.revertSettings();
 
         if (this.pollTimer) {
             clearInterval(this.pollTimer);
@@ -207,10 +196,9 @@ export class AutoAcceptService implements vscode.Disposable {
         try {
             const available = await this.cdpHandler.isCDPAvailable();
             if (available) {
-                await this.cdpHandler.start({ ide: 'antigravity', pollInterval: 1000 });
                 this.cdpConnected = true;
                 this._onStatusChange.fire({ enabled: true, cdp: true });
-                console.log('ReRevolve: CDP 연결 성공');
+                console.log('ReRevolve: CDP 연결 성공 (상태 비저장 감시 프로세스 활성화)');
             } else {
                 this.cdpConnected = false;
                 console.log('ReRevolve: CDP 미가용 (명령어 폴링만 사용)');
@@ -229,63 +217,15 @@ export class AutoAcceptService implements vscode.Disposable {
                 () => { }
             );
         }
-    }
 
-    // ===== 설정 주입 (ON 시) =====
-    private applySettings(): void {
-        try {
-            const config = vscode.workspace.getConfiguration();
-            for (const [key, values] of Object.entries(MANAGED_SETTINGS)) {
-                config.update(key, values.on, vscode.ConfigurationTarget.Global)
-                    .then(() => { }, () => { });
-            }
-
-            // browserAllowlist.txt 생성
-            const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-            const allowlistDir = path.join(userProfile, '.gemini', 'antigravity');
-            const allowlistPath = path.join(allowlistDir, 'browserAllowlist.txt');
-
-            if (!fs.existsSync(allowlistPath)) {
-                if (!fs.existsSync(allowlistDir)) {
-                    fs.mkdirSync(allowlistDir, { recursive: true });
-                }
-                fs.writeFileSync(allowlistPath, [
-                    'http://127.0.0.1:*/*',
-                    'http://localhost:*/*',
-                    'https://*/*',
-                    'http://*/*'
-                ].join('\n'), 'utf-8');
-            } else {
-                const existing = fs.readFileSync(allowlistPath, 'utf-8');
-                if (!existing.includes('https://*/*')) {
-                    fs.appendFileSync(allowlistPath, '\nhttps://*/*\nhttp://*/*\n', 'utf-8');
-                }
-            }
-            console.log('ReRevolve: 설정 + browserAllowlist 적용 완료');
-        } catch (err) {
-            console.error('ReRevolve: 설정 적용 실패', err);
+        // 다중 창 환경(단일 프로세스 공유) 대응:
+        // 백그라운드 웹소켓을 계속 열어두면 연결 탈취(Steal)로 구멍이 발생하므로,
+        // Stateless 구조로 700ms마다 실행여부 점검 및 부족한 창에 명령 보강 주입
+        if (this.cdpConnected) {
+            this.cdpHandler.start({ ide: 'antigravity', pollInterval: 1000 }).catch(() => {});
         }
     }
 
-    // ===== 설정 원복 (OFF 시) =====
-    private revertSettings(): void {
-        try {
-            const config = vscode.workspace.getConfiguration();
-            for (const [key, values] of Object.entries(MANAGED_SETTINGS)) {
-                config.update(key, values.off, vscode.ConfigurationTarget.Global)
-                    .then(() => { }, () => { });
-            }
-
-            const userProfile = process.env.USERPROFILE || process.env.HOME || '';
-            const allowlistPath = path.join(userProfile, '.gemini', 'antigravity', 'browserAllowlist.txt');
-            if (fs.existsSync(allowlistPath)) {
-                fs.unlinkSync(allowlistPath);
-            }
-            console.log('ReRevolve: 설정 + browserAllowlist 원복 완료');
-        } catch (err) {
-            console.error('ReRevolve: 설정 원복 실패', err);
-        }
-    }
 
     // ===== Auto-Run 패치 =====
     private applyAutoRunPatch(): void {

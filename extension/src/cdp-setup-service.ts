@@ -19,28 +19,28 @@ const CDP_PORT = 9000;
 const CDP_SETUP_KEY = 'cdpSetupDone';
 const CDP_ARG = `--remote-debugging-port=${CDP_PORT}`;
 
-// boost_silent.vbs 템플릿
+// boost_silent.vbs template (ASCII-safe, no multi-byte chars)
 const BOOST_VBS_TEMPLATE = `' Antigravity Boost Launcher (ReRevolve CDP Setup)
-' 사용법: wscript boost_silent.vbs "폴더경로"
-' 기능: 고아 좀비 프로세스 정리 + 관리자 권한 해제 + GPU 최적화 + CDP
+' Usage: wscript boost_silent.vbs "folderPath"
+' Features: zombie cleanup + RunAsInvoker + GPU boost + CDP
 
 Set objShell = CreateObject("WScript.Shell")
 
-' 폴더 경로 받기
+' Get folder path
 If WScript.Arguments.Count > 0 Then
     folderPath = WScript.Arguments(0)
 Else
     folderPath = objShell.CurrentDirectory
 End If
 
-' [1] 포트 26646 고아 좀비 프로세스만 정리
+' [1] Clean orphan processes on port 26646
 objShell.Run "powershell -WindowStyle Hidden -Command ""Get-NetTCPConnection -LocalPort 26646 -ErrorAction SilentlyContinue | ForEach-Object { $p = Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue; if ($p -and $p.Name -ne 'Antigravity') { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue } }""", 0, True
 
-' [2] Antigravity 실행 (Boost 플래그 + CDP)
+' [2] Launch Antigravity (Boost flags + CDP)
 antigravityExe = "<ANTIGRAVITY_EXE>"
 boostFlags = "--remote-debugging-port=${CDP_PORT} --enable-gpu-rasterization --enable-zero-copy --disable-gpu-driver-bug-workarounds"
 
-' 환경변수로 관리자 권한 해제
+' Drop admin privileges via env var
 objShell.Environment("Process")("__COMPAT_LAYER") = "RunAsInvoker"
 
 objShell.Run """" & antigravityExe & """ """ & folderPath & """ " & boostFlags, 1, False
@@ -267,7 +267,11 @@ Write-Host "Modified $modified shortcut(s)"
 
     private static execPromise(cmd: string): Promise<string> {
         return new Promise((resolve, reject) => {
-            exec(cmd, { shell: 'powershell.exe' }, (err, stdout, stderr) => {
+            exec(cmd, {
+                shell: 'powershell.exe',
+                encoding: 'utf8',
+                env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+            }, (err, stdout, stderr) => {
                 if (err) {
                     reject(new Error(`${err.message}\n${stderr}`));
                 } else {

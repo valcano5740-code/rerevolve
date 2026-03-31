@@ -2,7 +2,7 @@
   "name": "rerevolve-quota-manager",
   "displayName": "ReRevolve Quota Manager",
   "description": "Antigravity 다중 계정 Claude 쿼터 관리 확장프로그램",
-  "version": "8.1.0",
+  "version": "8.2.5",
   "publisher": "rerevolve",
   "engines": {
     "vscode": "^1.85.0"
@@ -114,16 +114,17 @@
     }
   },
   "scripts": {
-    "vscode:prepublish": "npm run compile",
-    "compile": "tsc -p ./",
+    "vscode:prepublish": "node esbuild.js --production",
+    "compile": "node esbuild.js",
     "watch": "tsc -watch -p ./",
-    "package": "vsce package"
+    "package": "node esbuild.js --production && vsce package --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",
     "@types/sql.js": "^1.4.9",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.24.0",
     "typescript": "^5.3.0"
   },
   "dependencies": {
