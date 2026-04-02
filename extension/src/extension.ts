@@ -9,6 +9,7 @@ import { AccountManager } from './account-manager';
 import { TokenService } from './token-service';
 import { QuotaService, QuotaResult } from './quota-service';
 import { AutoAcceptService } from './auto-accept-service';
+import { PrewarmService } from './prewarm-service';
 import { AccountSwitcher } from './account-switcher';
 import { LanguageServerClient } from './language-server-client';
 
@@ -20,6 +21,7 @@ let tokenService: TokenService;
 let quotaService: QuotaService;
 let accountManager: AccountManager;
 let accountSwitcher: AccountSwitcher;
+let prewarmService: PrewarmService;
 
 /**
  * Status Bar 아이템 상태 업데이트 (Auto-Accept)
@@ -127,6 +129,7 @@ export function activate(context: vscode.ExtensionContext) {
     quotaService = new QuotaService();
     autoAcceptService = new AutoAcceptService(context.globalState);
     accountSwitcher = new AccountSwitcher(context);
+    prewarmService = new PrewarmService(context.globalState, accountManager, tokenService, quotaService);
 
     // LanguageServerClient를 QuotaService에 주입 (PowerShell 중복 호출 방지)
     const lsClient = new LanguageServerClient();
@@ -168,7 +171,8 @@ export function activate(context: vscode.ExtensionContext) {
         tokenService,
         quotaService,
         autoAcceptService,
-        accountSwitcher
+        accountSwitcher,
+        prewarmService
     );
 
     context.subscriptions.push(
@@ -410,6 +414,17 @@ export function activate(context: vscode.ExtensionContext) {
 
     // Auto-Accept 저장된 상태 복원 (ON이었으면 자동 재시작)
     setTimeout(() => autoAcceptService.restoreState(), 3000);
+
+    // Pre-warm: 시작 10초 후 자동 실행 + 4시간 주기 타이머
+    setTimeout(async () => {
+        const results = await prewarmService.runIfEnabled();
+        if (results && results.length > 0) {
+            const ok = results.filter(r => r.success && !r.skipped).length;
+            const skip = results.filter(r => r.skipped).length;
+            console.log(`ReRevolve Pre-warm: 시작 시 실행 완료 (성공: ${ok}, 스킵: ${skip})`);
+        }
+        prewarmService.scheduleTimer();
+    }, 10000);
     } catch (err) {
         console.error('ReRevolve: 활성화 중 에러 발생:', err);
     }

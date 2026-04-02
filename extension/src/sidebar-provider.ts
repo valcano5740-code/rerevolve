@@ -8,6 +8,7 @@ import { TokenService } from './token-service';
 import { QuotaService, QuotaResult } from './quota-service';
 import { AutoAcceptService } from './auto-accept-service';
 import { AccountSwitcher } from './account-switcher';
+import { PrewarmService } from './prewarm-service';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -28,7 +29,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         private tokenService: TokenService,
         private quotaService: QuotaService,
         private autoAcceptService: AutoAcceptService,
-        private accountSwitcher?: AccountSwitcher
+        private accountSwitcher?: AccountSwitcher,
+        private prewarmService?: PrewarmService
     ) {
         // 쿼터 캐시 파일 경로
         const globalStoragePath = vscode.Uri.joinPath(extensionUri, '..', '..', '.rerevolve-cache').fsPath;
@@ -135,6 +137,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     this.sendDataToWebview();
                     // 초기 로드 시 Auto-Accept 상태도 전달
                     this.updateAutoAcceptStatus(this.autoAcceptService.isEnabled);
+                    // Pre-warm 상태도 전달
+                    if (this.prewarmService) {
+                        this._view?.webview.postMessage({ command: 'prewarmStatus', enabled: this.prewarmService.isEnabled });
+                    }
                     break;
                 case 'clearLogs':
                     this.activityLogs = [];
@@ -167,6 +173,34 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     this.autoAcceptService.toggle().then(enabled => {
                         this.updateAutoAcceptStatus(enabled);
                     });
+                    break;
+                case 'togglePrewarm':
+                    if (this.prewarmService) {
+                        this.prewarmService.toggle().then(enabled => {
+                            this._view?.webview.postMessage({ command: 'prewarmStatus', enabled });
+                            this.addLog(`Pre-warm ${enabled ? '활성화' : '비활성화'}`, enabled ? 'success' : 'info');
+                        });
+                    }
+                    break;
+                case 'runPrewarmNow':
+                    if (this.prewarmService) {
+                        this.addLog('Pre-warm 수동 실행 시작...', 'info');
+                        this.prewarmService.runPrewarm().then(results => {
+                            for (const r of results) {
+                                if (r.skipped) {
+                                    this.addLog(`[${r.email.split('@')[0]}] 스킵: ${r.skipReason}`, 'info');
+                                } else if (r.success) {
+                                    this.addLog(`[${r.email.split('@')[0]}] ✅ Claude ${r.claudeRemaining}% (리셋: ${r.resetTime || '정보없음'})`, 'success');
+                                } else {
+                                    this.addLog(`[${r.email.split('@')[0]}] ❌ ${r.error}`, 'error');
+                                }
+                            }
+                            const ok = results.filter(r => r.success && !r.skipped).length;
+                            this.addLog(`Pre-warm 완료: ${ok}개 계정 워밍업`, 'success');
+                            // 쿼터 캐시 갱신을 위해 전체 새로고침
+                            this.refreshAll();
+                        });
+                    }
                     break;
                 case 'setupCDP':
                     this.autoAcceptService.setupCDP();
@@ -1220,6 +1254,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 </button>
             </div>
             
+            <!-- Pre-warm 섹션 -->
+            <div class="auto-accept-row" style="margin-top:4px;">
+                <button id="prewarmBtn" class="btn btn-auto-accept" onclick="togglePrewarm()" title="Pre-warm: 모든 계정 쿨타임 사전 시작">
+                    <span id="prewarmIcon">🔴</span> Pre-warm
+                </button>
+                <button class="btn btn-pin" onclick="runPrewarmNow()" title="지금 즉시 Pre-warm 실행" style="min-width:60px;">
+                    🔥 실행
+                </button>
+            </div>
+            
             <!-- 활동 로그 (설정 내부) -->
             <div class="log-section">
                 <div class="log-header" onclick="toggleLogs()">
@@ -1278,6 +1322,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 updateAutoAcceptUI();
             } else if (message.command === 'updateLogs') {
                 renderLogs(message.logs);
+            } else if (message.command === 'prewarmStatus') {
+                const btn = document.getElementById('prewarmBtn');
+                const icon = document.getElementById('prewarmIcon');
+                if (message.enabled) {
+                    icon.textContent = '🟢';
+                    btn.classList.add('active');
+                } else {
+                    icon.textContent = '🔴';
+                    btn.classList.remove('active');
+                }
             }
         });
         
@@ -1318,6 +1372,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         
         function toggleAutoAccept() {
             vscode.postMessage({ command: 'toggleAutoAccept' });
+        }
+        
+        function togglePrewarm() {
+            vscode.postMessage({ command: 'togglePrewarm' });
+        }
+        
+        function runPrewarmNow() {
+            vscode.postMessage({ command: 'runPrewarmNow' });
         }
         
         function toggleSettings() {

@@ -2,7 +2,7 @@
   "name": "rerevolve-quota-manager",
   "displayName": "ReRevolve Quota Manager",
   "description": "Antigravity 다중 계정 Claude 쿼터 관리 확장프로그램",
-  "version": "8.2.5",
+  "version": "8.3.0",
   "publisher": "rerevolve",
   "engines": {
     "vscode": "^1.85.0"
@@ -74,6 +74,11 @@
       {
         "command": "rerevolve.autoRunStatus",
         "title": "ReRevolve: Auto-Run 패치 상태"
+      },
+      {
+        "command": "rerevolve.togglePrewarm",
+        "title": "ReRevolve: Pre-warm 토글",
+        "icon": "$(flame)"
       }
     ],
     "keybindings": [
@@ -109,6 +114,11 @@
           "type": "boolean",
           "default": false,
           "description": "Auto-Accept 활성화 상태 (모든 세션 동기화)"
+        },
+        "rerevolve.prewarmEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pre-warm (Kickstart) 활성화: 모든 계정의 쿨타임을 사전 시작"
         }
       }
     }
