@@ -494,12 +494,25 @@ export class TokenService {
 
     /**
      * 현재 Antigravity에 로그인된 이메일 추출
-     * 3단계 전략:
+     * 4단계 전략:
+     *  0. antigravity_auth 세션 — VS Code Authentication Provider API (즉시, 100% 정확)
      *  1. getEmailQuick() — 캐시된 서버 정보로 HTTP만 호출 (PowerShell 없음, ~50ms)
      *  2. getCurrentEmail() — 서버 재감지 포함 full detect (~3-5초)  
      *  3. vscdb fallback — state.vscdb 파일 파싱
      */
     async getCurrentLoggedInEmail(): Promise<string | null> {
+        // 0단계: antigravity_auth 세션 (Settings Account 탭과 동일 소스)
+        try {
+            const session = await vscode.authentication.getSession('antigravity_auth', [], { silent: true });
+            if (session?.account?.label) {
+                const authEmail = session.account.label.toLowerCase();
+                console.log(`ReRevolve: Auth provider - email: ${authEmail}`);
+                return authEmail;
+            }
+        } catch {
+            // Provider 미등록 시 무시 — 다음 단계로
+        }
+
         // 1단계: 경량 HTTP 조회 (LS 서버 캐시 있으면 즉시 응답)
         try {
             const quickEmail = await this.lsClient.getEmailQuick();

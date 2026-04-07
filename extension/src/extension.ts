@@ -412,6 +412,33 @@ export function activate(context: vscode.ExtensionContext) {
         console.error('ReRevolve: state.vscdb 감시 실패', err);
     }
 
+    // antigravity_auth 세션 변경 감지 → 계정 전환 즉시 감지 (Settings Account 탭과 동일 소스)
+    try {
+        context.subscriptions.push(
+            vscode.authentication.onDidChangeSessions(async (e) => {
+                if (e.provider.id === 'antigravity_auth') {
+                    console.log('ReRevolve: antigravity_auth 세션 변경 감지! → 계정 재감지');
+                    tokenService.invalidateCache();
+                    quotaService.invalidateLsCache();
+                    
+                    // 새 세션에서 이메일 확인
+                    try {
+                        const session = await vscode.authentication.getSession('antigravity_auth', [], { silent: true });
+                        const newEmail = session?.account?.label || '알 수 없음';
+                        console.log(`ReRevolve: 새 활성 계정: ${newEmail}`);
+                    } catch { /* 무시 */ }
+
+                    // 사이드바 + 상태바 즉시 갱신
+                    await sidebarProvider.refreshActiveOnly();
+                    await refreshActiveQuota();
+                }
+            })
+        );
+        console.log('ReRevolve: antigravity_auth 세션 변경 감시 등록 완료');
+    } catch (err) {
+        console.log('ReRevolve: antigravity_auth 이벤트 등록 실패 (비 Antigravity 환경?)', err);
+    }
+
     // Auto-Accept 저장된 상태 복원 (ON이었으면 자동 재시작)
     setTimeout(() => autoAcceptService.restoreState(), 3000);
 
