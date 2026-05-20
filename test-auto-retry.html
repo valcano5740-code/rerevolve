@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ReRevolve 2.0 Auto Retry Sandbox Test</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #1a1a1a;
+            color: #e0e0e0;
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        /* 모의 사이드바 스타일링 */
+        #sidebar {
+            width: 260px;
+            background-color: #202020;
+            border-right: 1px solid #2e2e2e;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            padding: 15px;
+            box-sizing: border-box;
+        }
+
+        .sidebar-menu {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .menu-item {
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-size: 14px;
+        }
+
+        .menu-item:hover {
+            background-color: #2a2a2a;
+        }
+
+        /* 하단 Settings 메뉴 구조 */
+        .sidebar-footer {
+            border-top: 1px solid #2e2e2e;
+            padding-top: 15px;
+        }
+
+        #settings-menu {
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            background-color: transparent;
+            border: none;
+            color: #e0e0e0;
+            font-size: 14px;
+            width: 100%;
+            text-align: left;
+            transition: background-color 0.2s;
+        }
+
+        #settings-menu:hover {
+            background-color: #2a2a2a;
+        }
+
+        /* 메인 컨텐츠 영역 */
+        #main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px;
+        }
+
+        .btn {
+            background-color: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+
+        .btn:hover {
+            background-color: #1d4ed8;
+        }
+
+        /* 에러 팝업 모달 모의 UI */
+        #popup-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0,0,0,0.6);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 10000;
+        }
+
+        .error-popup {
+            background-color: #2d2d2d;
+            border: 1px solid #444;
+            border-radius: 12px;
+            padding: 24px;
+            width: 480px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+            font-family: sans-serif;
+        }
+
+        .error-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #ef4444;
+            font-weight: bold;
+            font-size: 16px;
+            margin-bottom: 12px;
+        }
+
+        .error-body {
+            color: #aaa;
+            font-size: 14px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+        }
+
+        .error-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .btn-dismiss {
+            background-color: #3e3e3e;
+            color: #ccc;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .btn-retry {
+            background-color: #0066cc;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .btn-retry:hover {
+            background-color: #0052a3;
+        }
+
+        /* 성공 알림 토스트 */
+        #test-status {
+            margin-top: 20px;
+            padding: 10px;
+            border-radius: 6px;
+            background-color: #2a2a2a;
+            color: #34d399;
+            font-size: 14px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 모의 사이드바 -->
+    <div id="sidebar">
+        <div class="sidebar-menu">
+            <h3>Antigravity 2.0</h3>
+            <div class="menu-item">+ New Conversation</div>
+            <div class="menu-item">Conversation History</div>
+            <div class="menu-item">Projects</div>
+        </div>
+        <div class="sidebar-footer">
+            <!-- Tampermonkey가 타겟팅할 모의 Settings 엘리먼트 -->
+            <button id="settings-menu">
+                <span style="margin-right: 8px;">⚙</span>Settings
+            </button>
+        </div>
+    </div>
+
+    <!-- 메인 대화 영역 -->
+    <div id="main-content">
+        <h2>ReRevolve 2.0 Sandbox Sandbox</h2>
+        <p style="color: #888; text-align: center; max-width: 500px; margin-bottom: 30px;">
+            여기는 Tampermonkey 유저스크립트 작동을 오프라인에서 사전 검증하기 위한 안전한 샌드박스 페이지입니다.<br>
+            유저스크립트를 켠 뒤, 아래 버튼을 눌러 에러 팝업을 발생시켜 보세요.
+        </p>
+        <button class="btn" onclick="showMockError()">가상 에러 팝업(Retry) 발생시키기</button>
+        <div id="test-status"></div>
+    </div>
+
+    <!-- 모의 에러 팝업 모달 -->
+    <div id="popup-container">
+        <div class="error-popup">
+            <div class="error-header">
+                <span>⚠️</span> Agent terminated due to error
+            </div>
+            <div class="error-body">
+                You prompt the model to try again or start a new conversation if the error persists.<br>
+                See our <a href="#" style="color: #60a5fa;">troubleshooting_guide</a> for more help.
+            </div>
+            <div class="error-footer">
+                <button class="btn-dismiss" onclick="closeMockError()">Dismiss</button>
+                <button class="btn-retry" onclick="onRetryClicked()">Retry</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function showMockError() {
+            document.getElementById('popup-container').style.display = 'flex';
+            document.getElementById('test-status').style.display = 'none';
+        }
+
+        function closeMockError() {
+            document.getElementById('popup-container').style.display = 'none';
+        }
+
+        function onRetryClicked() {
+            closeMockError();
+            const statusDiv = document.getElementById('test-status');
+            statusDiv.innerText = "🎉 [테스트 성공] Retry 버튼이 정상적으로 자동 클릭되었습니다!";
+            statusDiv.style.display = 'block';
+            console.log("[Mock Test] Retry 버튼이 성공적으로 클릭되었습니다.");
+        }
+    </script>
+</body>
+</html>
