@@ -1,10 +1,13 @@
 /**
- * Pre-warm Service - 등록된 모든 계정의 쿨타임을 사전 시작
+ * Pre-warm Service - 등록된 비활성 계정의 세션 사전 활성화
+ * 
+ * v8.3.10 개선:
+ * - 스마트 필터링: 유료계정은 resetTime "5시간 0분/1분"(미활성)인 경우만 프리워밍
+ * - 무료계정: refreshLocked여도 토큰이 있으면 프리워밍 대상
+ * - 프리워밍 결과로 Account에 lastResetTimestamp/lastResetDurationMs 저장
  * 
  * 원리: Google CloudCode의 loadCodeAssist API를 각 계정 토큰으로 호출하면
  * 해당 계정의 세션이 활성화되어 쿼터 소모(~1토큰) → 쿨타임 카운트다운 시작
- * 
- * 참고: antigravity-usage의 "Wakeup Command", Antigravity-Manager의 "Smart Warmup"과 동일 원리
  */
 
 import * as vscode from 'vscode';
@@ -17,6 +20,26 @@ const PREWARM_LAST_RUN_KEY = 'rerevolve.prewarmLastRun';
 const PREWARM_INTERVAL_MS = 4 * 60 * 60 * 1000; // 4시간
 const PREWARM_STARTUP_DELAY_MS = 10000; // 시작 후 10초 대기
 const PREWARM_ACCOUNT_DELAY_MS = 1500; // 계정 간 1.5초 딜레이 (Rate limit 방지)
+
+/** resetTime 문자열을 ms로 변환 */
+function parseResetTimeToMs(resetTime: string | null | undefined): number {
+    if (!resetTime) return 0;
+    const dayMatch = resetTime.match(/(\d+)일/);
+    const hourMatch = resetTime.match(/(\d+)시간/);
+    const minuteMatch = resetTime.match(/(\d+)분/);
+    const days = dayMatch ? parseInt(dayMatch[1]) : 0;
+    const hours = hourMatch ? parseInt(hourMatch[1]) : 0;
+    const minutes = minuteMatch ? parseInt(minuteMatch[1]) : 0;
+    return (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
+}
+
+/** resetTime이 "5시간 0분" 또는 "5시간 1분"인지 (유료 미활성 상태) */
+function isUnactivatedPaidReset(resetTime: string | null | undefined): boolean {
+    if (!resetTime) return true; // 정보 없으면 미활성으로 간주
+    const ms = parseResetTimeToMs(resetTime);
+    // 5시간 0분 (18000000ms) ~ 5시간 1분 (18060000ms) 범위
+    return ms >= 5 * 60 * 60 * 1000 && ms <= 5 * 60 * 60 * 1000 + 1 * 60 * 1000;
+}
 
 export interface PrewarmResult {
     email: string;
@@ -32,12 +55,29 @@ export class PrewarmService {
     private timer: ReturnType<typeof setInterval> | null = null;
     private running = false;
 
+    /** quotaCache getter (sidebar-provider에서 주입) */
+    private quotaCacheGetter: (() => Record<string, QuotaResult>) | null = null;
+
+    /** 프리워밍 결과 콜백 (sidebar-provider에서 계정/캐시 업데이트용) */
+    private onPrewarmResult: ((email: string, quota: QuotaResult) => void) | null = null;
+
     constructor(
         private globalState: vscode.Memento,
         private accountManager: AccountManager,
         private tokenService: TokenService,
         private quotaService: QuotaService
     ) {}
+
+    /**
+     * sidebar-provider와 연동 설정
+     */
+    setCallbacks(
+        quotaCacheGetter: () => Record<string, QuotaResult>,
+        onPrewarmResult: (email: string, quota: QuotaResult) => void
+    ): void {
+        this.quotaCacheGetter = quotaCacheGetter;
+        this.onPrewarmResult = onPrewarmResult;
+    }
 
     /**
      * Pre-warm 활성화 상태
@@ -100,6 +140,11 @@ export class PrewarmService {
 
     /**
      * Pre-warm 즉시 실행 (수동 트리거)
+     * 
+     * 스마트 필터링:
+     * - 유료 비활성 계정: resetTime이 "5시간 0분/1분"(미활성) → 프리워밍
+     * - 무료 비활성 계정: refreshLocked여도 토큰이 있으면 → 프리워밍
+     * - 이미 카운트다운 중인 계정 → 스킵
      */
     async runPrewarm(): Promise<PrewarmResult[]> {
         if (this.running) {
@@ -109,10 +154,12 @@ export class PrewarmService {
 
         this.running = true;
         const results: PrewarmResult[] = [];
+        const quotaCache = this.quotaCacheGetter?.() || {};
 
         try {
             const accounts = this.accountManager.getAccounts();
-            const activeEmail = await this.tokenService.getCurrentLoggedInEmail();
+            const currentActive = accounts.find(a => a.isActive)?.email;
+            const activeEmail = await this.tokenService.getCurrentLoggedInEmail(currentActive);
 
             console.log(`ReRevolve Pre-warm: 시작 (${accounts.length}개 계정, 활성: ${activeEmail || '없음'})`);
 
@@ -129,6 +176,41 @@ export class PrewarmService {
                     });
                     console.log(`ReRevolve Pre-warm: [${email}] 활성 계정 → 스킵`);
                     continue;
+                }
+
+                // 캐시된 쿼터 정보로 스마트 필터링
+                const cached = quotaCache[email];
+                const resetTime = cached?.claudeResetTime;
+
+                if (account.isPaid) {
+                    // 유료: resetTime이 "5시간 0분/1분"이 아니면 이미 활성화됨
+                    if (resetTime && !isUnactivatedPaidReset(resetTime)) {
+                        results.push({
+                            email,
+                            success: true,
+                            skipped: true,
+                            skipReason: `이미 활성 (남은: ${resetTime})`
+                        });
+                        console.log(`ReRevolve Pre-warm: [${email}] 유료 이미 활성 (${resetTime}) → 스킵`);
+                        continue;
+                    }
+                } else {
+                    // 무료: 로컬 카운트다운이 아직 남아있으면 스킵
+                    if (account.lastResetTimestamp && account.lastResetDurationMs) {
+                        const elapsed = Date.now() - account.lastResetTimestamp;
+                        const remaining = account.lastResetDurationMs - elapsed;
+                        if (remaining > 0) {
+                            const remainHours = Math.floor(remaining / 3600000);
+                            results.push({
+                                email,
+                                success: true,
+                                skipped: true,
+                                skipReason: `카운트다운 중 (잔여 ${remainHours}시간)`
+                            });
+                            console.log(`ReRevolve Pre-warm: [${email}] 무료 카운트다운 중 (${remainHours}h) → 스킵`);
+                            continue;
+                        }
+                    }
                 }
 
                 // 토큰 확인
@@ -165,7 +247,26 @@ export class PrewarmService {
                         resetTime: quota.claudeResetTime,
                         error: quota.error
                     });
-                    console.log(`ReRevolve Pre-warm: [${email}] ✅ 성공 (Claude: ${quota.claudeRemaining}%, 리셋: ${quota.claudeResetTime || '정보 없음'})`);
+
+                    if (!quota.error) {
+                        // 프리워밍 성공: Account에 카운트다운 기준점 저장
+                        const resetMs = parseResetTimeToMs(quota.claudeResetTime);
+                        if (resetMs > 0) {
+                            account.lastResetTimestamp = Date.now();
+                            account.lastResetDurationMs = resetMs;
+                            this.accountManager.updateAccount(email, {
+                                lastResetTimestamp: account.lastResetTimestamp,
+                                lastResetDurationMs: account.lastResetDurationMs
+                            });
+                        }
+
+                        // sidebar에 캐시 업데이트 콜백
+                        this.onPrewarmResult?.(email, quota);
+
+                        console.log(`ReRevolve Pre-warm: [${email}] ✅ 성공 (Claude: ${quota.claudeRemaining}%, 리셋: ${quota.claudeResetTime || '정보 없음'})`);
+                    } else {
+                        console.log(`ReRevolve Pre-warm: [${email}] ⚠️ 쿼터 조회 실패: ${quota.error}`);
+                    }
                 } catch (err) {
                     results.push({
                         email,

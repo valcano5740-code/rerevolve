@@ -15,8 +15,14 @@ export interface Account {
     isPaid: boolean;
     isActive: boolean;
     refreshLocked: boolean;
+    /** 사용자가 수동으로 잠금 해제한 경우 true — 자동 재잠금 방지 */
+    manualUnlock?: boolean;
     createdAt: string;
     lastUpdated: string;
+    /** 마지막 API resetTime 수신 시각 (epoch ms) — 로컬 카운트다운 기준점 */
+    lastResetTimestamp?: number;
+    /** 수신 당시 resetTime을 ms로 변환한 값 — 카운트다운 총 길이 */
+    lastResetDurationMs?: number;
 }
 
 interface AccountsData {

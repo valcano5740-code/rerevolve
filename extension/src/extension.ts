@@ -16,6 +16,7 @@ import { LanguageServerClient } from './language-server-client';
 let sidebarProvider: SidebarProvider;
 let autoAcceptService: AutoAcceptService;
 let statusBarItem: vscode.StatusBarItem;
+let retryStatusBarItem: vscode.StatusBarItem;
 let quotaStatusBarItem: vscode.StatusBarItem;
 let tokenService: TokenService;
 let quotaService: QuotaService;
@@ -26,16 +27,29 @@ let prewarmService: PrewarmService;
 /**
  * Status Bar 아이템 상태 업데이트 (Auto-Accept)
  */
-function updateStatusBarItem(enabled: boolean, cdp: boolean = false): void {
+function updateStatusBarItem(enabled: boolean, cdp: boolean = false, retryEnabled: boolean = false): void {
+    const cdpLabel = cdp ? ' (CDP)' : '';
+
     if (enabled) {
-        const cdpLabel = cdp ? ' (CDP)' : '';
-        statusBarItem.text = `$(rocket) Auto-Accept: ON${cdpLabel}`;
-        statusBarItem.tooltip = `ReRevolve Auto-Accept 활성 상태${cdpLabel}\n클릭하여 비활성화 (Ctrl+Alt+Shift+A)`;
+        statusBarItem.text = `$(rocket) Accept ON${cdpLabel}`;
+        statusBarItem.tooltip = `ReRevolve Auto-Accept ON${cdpLabel}\nAccept/Run/Permission 수락 자동화\n클릭하여 끄기 (Ctrl+Alt+Shift+A)`;
         statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
     } else {
-        statusBarItem.text = '$(debug-stop) Auto-Accept: OFF';
-        statusBarItem.tooltip = 'ReRevolve Auto-Accept 비활성 상태\n클릭하여 활성화 (Ctrl+Alt+Shift+A)';
+        statusBarItem.text = '$(debug-stop) Accept OFF';
+        statusBarItem.tooltip = 'ReRevolve Auto-Accept OFF\n클릭하여 켜기 (Ctrl+Alt+Shift+A)';
         statusBarItem.backgroundColor = undefined;
+    }
+
+    if (!retryStatusBarItem) return;
+
+    if (retryEnabled) {
+        retryStatusBarItem.text = `$(debug-restart) Retry ON${cdpLabel}`;
+        retryStatusBarItem.tooltip = `ReRevolve Auto-Retry ON${cdpLabel}\nRetry/Continue 복구 자동화\n클릭하여 끄기 (Ctrl+Alt+Shift+R)`;
+        retryStatusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.prominentBackground');
+    } else {
+        retryStatusBarItem.text = '$(debug-restart) Retry OFF';
+        retryStatusBarItem.tooltip = 'ReRevolve Auto-Retry OFF\nRetry/Continue 복구 자동화가 꺼져 있습니다\n클릭하여 켜기 (Ctrl+Alt+Shift+R)';
+        retryStatusBarItem.backgroundColor = undefined;
     }
 }
 
@@ -90,8 +104,14 @@ function updateQuotaStatusBar(email: string | null, quota: QuotaResult | null): 
         quotaStatusBarItem.backgroundColor = undefined;
     }
 
-    quotaStatusBarItem.text = `${moon} ${shortEmail}: ${percent}%`;
-    quotaStatusBarItem.tooltip = `${email}\nClaude 쿼터: ${percent}%\n리셋: ${quota.claudeResetTime || '정보 없음'}\n클릭하여 새로고침`;
+    const geminiPercent = quota.geminiProRemaining < 0 ? -1 : Math.round(quota.geminiProRemaining);
+    const geminiPart = geminiPercent >= 0 ? ` 🔵${geminiPercent}%` : '';
+
+    const creditPart = quota.isCreditOverage ? ' 💳' : '';
+    const creditLine = quota.isCreditOverage ? '\n💳 AI 크레딧 사용 중' : '';
+
+    quotaStatusBarItem.text = `${moon} ${shortEmail} 🟣${percent}%${creditPart}${geminiPart}`;
+    quotaStatusBarItem.tooltip = `${email}\n🟣 Claude: ${percent}%${creditLine}\n🔵 Gemini Pro: ${geminiPercent >= 0 ? geminiPercent + '%' : '정보 없음'}\n⏰ 리셋: ${quota.claudeResetTime || '정보 없음'}\n클릭하여 새로고침`;
 }
 
 /**
@@ -124,15 +144,15 @@ export function activate(context: vscode.ExtensionContext) {
     console.log('ReRevolve v8.2: 확장 활성화 시작');
 
     // 서비스 초기화
+    const lsClient = new LanguageServerClient();
     accountManager = new AccountManager(context);
-    tokenService = new TokenService(context.globalState);
+    tokenService = new TokenService(context.globalState, lsClient);
     quotaService = new QuotaService();
     autoAcceptService = new AutoAcceptService(context.globalState);
-    accountSwitcher = new AccountSwitcher(context);
+    accountSwitcher = new AccountSwitcher(context, tokenService);
     prewarmService = new PrewarmService(context.globalState, accountManager, tokenService, quotaService);
 
     // LanguageServerClient를 QuotaService에 주입 (PowerShell 중복 호출 방지)
-    const lsClient = new LanguageServerClient();
     quotaService.setLsClient(lsClient);
 
     // Status Bar 아이템 생성 (우측 우선순위 높게 배치)
@@ -141,9 +161,18 @@ export function activate(context: vscode.ExtensionContext) {
         1000 // 높은 우선순위로 오른쪽에 배치
     );
     statusBarItem.command = 'rerevolve.toggleAutoAccept';
-    updateStatusBarItem(false);
+
+    retryStatusBarItem = vscode.window.createStatusBarItem(
+        vscode.StatusBarAlignment.Right,
+        1001
+    );
+    retryStatusBarItem.command = 'rerevolve.toggleAutoRetry';
+
+    updateStatusBarItem(false, false, false);
     statusBarItem.show();
+    retryStatusBarItem.show();
     context.subscriptions.push(statusBarItem);
+    context.subscriptions.push(retryStatusBarItem);
 
     // 쿼터 상태바 아이템 생성 (Auto-Accept 왼쪽에 배치)
     quotaStatusBarItem = vscode.window.createStatusBarItem(
@@ -156,11 +185,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(quotaStatusBarItem);
 
     // Auto-Accept 상태 변경 시 StatusBar 업데이트 (설정 연동은 서비스 내부에서 처리)
-    autoAcceptService.onStatusChange(({ enabled, cdp }) => {
-        updateStatusBarItem(enabled, cdp);
+    autoAcceptService.onStatusChange(({ enabled, retryEnabled, cdp }) => {
+        updateStatusBarItem(enabled, cdp, retryEnabled);
         // 사이드바에도 상태 전달
         if (sidebarProvider) {
             sidebarProvider.updateAutoAcceptStatus(enabled);
+            sidebarProvider.updateAutoRetryStatus(retryEnabled);
         }
     });
 
@@ -174,6 +204,9 @@ export function activate(context: vscode.ExtensionContext) {
         accountSwitcher,
         prewarmService
     );
+
+    // 프리워밍 ↔ 사이드바 콜백 연결 (스마트 필터링 + 캐시 동기화)
+    sidebarProvider.wirePrewarmCallbacks();
 
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider(
@@ -212,6 +245,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.commands.registerCommand('rerevolve.toggleAutoAccept', () => {
             autoAcceptService.toggle();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('rerevolve.toggleAutoRetry', () => {
+            autoAcceptService.toggleRetry();
         })
     );
 
@@ -292,7 +331,8 @@ export function activate(context: vscode.ExtensionContext) {
 
     async function refreshActiveQuota(): Promise<void> {
         try {
-            const activeEmail = await tokenService.getCurrentLoggedInEmail();
+            const currentActive = accountManager.getAccounts().find(a => a.isActive)?.email;
+            const activeEmail = await tokenService.getCurrentLoggedInEmail(currentActive);
             if (!activeEmail) {
                 updateQuotaStatusBar(null, null);
                 return;
@@ -338,6 +378,9 @@ export function activate(context: vscode.ExtensionContext) {
     }
 
     console.log('ReRevolve: 초기화 완료');
+
+    // 즉시 활성 계정 동기화 (시작 시 이전 세션 캐시 제거)
+    sidebarProvider.refreshActiveOnly().catch(() => {});
 
     // 상태바 빠른 갱신 (1초 후 - vscdb 빠른 경로 활용)
     setTimeout(async () => {
@@ -417,20 +460,15 @@ export function activate(context: vscode.ExtensionContext) {
         context.subscriptions.push(
             vscode.authentication.onDidChangeSessions(async (e) => {
                 if (e.provider.id === 'antigravity_auth') {
-                    console.log('ReRevolve: antigravity_auth 세션 변경 감지! → 계정 재감지');
+                    console.log('ReRevolve: antigravity_auth 세션 변경 감지! → 2s 후 계정 재감지');
                     tokenService.invalidateCache();
                     quotaService.invalidateLsCache();
                     
-                    // 새 세션에서 이메일 확인
-                    try {
-                        const session = await vscode.authentication.getSession('antigravity_auth', [], { silent: true });
-                        const newEmail = session?.account?.label || '알 수 없음';
-                        console.log(`ReRevolve: 새 활성 계정: ${newEmail}`);
-                    } catch { /* 무시 */ }
-
-                    // 사이드바 + 상태바 즉시 갱신
-                    await sidebarProvider.refreshActiveOnly();
-                    await refreshActiveQuota();
+                    // vscdb가 세션 변경을 반영할 시간을 줌 (즉시 읽으면 stale 데이터)
+                    setTimeout(async () => {
+                        await sidebarProvider.refreshActiveOnly();
+                        await refreshActiveQuota();
+                    }, 2000);
                 }
             })
         );

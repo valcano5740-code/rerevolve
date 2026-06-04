@@ -8,6 +8,7 @@ node_modules/**
 *.ts
 tsconfig.json
 esbuild.js
+sync-gd-release.js
 **/*.map
 *.vsix
 .gitignore

@@ -16,10 +16,15 @@ interface QuotaCache {
     [email: string]: QuotaResult;
 }
 
+const FREE_INACTIVE_RESET_MS = 7 * 24 * 60 * 60 * 1000;
+
 export class SidebarProvider implements vscode.WebviewViewProvider {
     private _view?: vscode.WebviewView;
     private quotaCache: QuotaCache = {};
     private quotaCachePath: string;
+    // 유료→무료 오탐 강등 방지: 연속 N회 무료 판정 시에만 실제 강등
+    private _freeDemotionCount: Record<string, number> = {};
+    private static readonly FREE_DEMOTION_THRESHOLD = 3;
     private activityLogs: { time: string; message: string; type: 'info' | 'success' | 'error' }[] = [];
     private static readonly MAX_LOGS = 50;
 
@@ -46,6 +51,190 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             command: 'autoAcceptStatus',
             enabled
         });
+    }
+
+    public updateAutoRetryStatus(enabled: boolean): void {
+        this._view?.webview.postMessage({
+            command: 'autoRetryStatus',
+            enabled
+        });
+    }
+
+    /**
+     * quotaCache getter (prewarm-service에서 스마트 필터링용)
+     */
+    public getQuotaCache(): QuotaCache {
+        return this.quotaCache;
+    }
+
+    /**
+     * 프리워밍 결과 콜백 (캐시 업데이트 + UI 갱신)
+     */
+    public onPrewarmResult(email: string, quota: QuotaResult): void {
+        this.quotaCache[email] = quota;
+        this.saveQuotaCache();
+        this.refresh();
+    }
+
+    private parseResetTimeToMs(resetTime: string | null | undefined): number {
+        if (!resetTime) return 0;
+        const dayMatch = resetTime.match(/(\d+)일/);
+        const hourMatch = resetTime.match(/(\d+)시간/);
+        const minuteMatch = resetTime.match(/(\d+)분/);
+        const days = dayMatch ? parseInt(dayMatch[1], 10) : 0;
+        const hours = hourMatch ? parseInt(hourMatch[1], 10) : 0;
+        const minutes = minuteMatch ? parseInt(minuteMatch[1], 10) : 0;
+        return (days * 24 * 60 + hours * 60 + minutes) * 60 * 1000;
+    }
+
+    private toDate(value: any): Date {
+        const date = value instanceof Date ? value : new Date(value);
+        return Number.isNaN(date.getTime()) ? new Date() : date;
+    }
+
+    private isInactiveFreeAccount(account: Account, quota?: QuotaResult | null): boolean {
+        const isFree = account.tier === 'free' || !account.isPaid || quota?.isPaidAccount === false;
+        return !account.isActive && isFree;
+    }
+
+    private ensureInactiveFreeTracking(account: Account, quota?: QuotaResult | null): Account {
+        if (!quota || !this.isInactiveFreeAccount(account, quota)) {
+            return account;
+        }
+
+        const updates: Partial<Account> = {};
+        const derivedDuration = account.lastResetDurationMs || this.parseResetTimeToMs(quota.claudeResetTime);
+        const quotaUpdatedAt = this.toDate(quota.lastUpdated).getTime();
+        const derivedTimestamp = account.lastResetTimestamp || (derivedDuration > 0 ? quotaUpdatedAt : undefined);
+
+        if (derivedDuration > 0 && account.lastResetDurationMs !== derivedDuration) {
+            updates.lastResetDurationMs = derivedDuration;
+        }
+        if (derivedTimestamp && account.lastResetTimestamp !== derivedTimestamp) {
+            updates.lastResetTimestamp = derivedTimestamp;
+        }
+        if (!account.refreshLocked && !account.manualUnlock) {
+            updates.refreshLocked = true;
+        }
+
+        if (Object.keys(updates).length === 0) {
+            return account;
+        }
+
+        this.accountManager.updateAccount(account.email, updates);
+        return { ...account, ...updates };
+    }
+
+    private buildSyntheticFreeFullQuota(account: Account, cached: QuotaResult): QuotaResult {
+        const resetText = '7일 0시간';
+        const lastUpdated = new Date();
+        return {
+            ...cached,
+            email: account.email,
+            isPaidAccount: false,
+            claudeRemaining: 100,
+            claudeResetTime: resetText,
+            claudeResetTimeRaw: null,
+            geminiProRemaining: cached.geminiProRemaining >= 0 ? 100 : cached.geminiProRemaining,
+            geminiFlashRemaining: cached.geminiFlashRemaining >= 0 ? 100 : cached.geminiFlashRemaining,
+            isCreditOverage: false,
+            models: (cached.models || []).map(model => ({
+                ...model,
+                remainingPercentage: /claude|gpt|gemini|flash/i.test(`${model.model} ${model.displayName}`) ? 100 : model.remainingPercentage,
+                resetTime: /claude|gpt|gemini|flash/i.test(`${model.model} ${model.displayName}`) ? resetText : model.resetTime,
+                isCreditOverage: false
+            })),
+            lastUpdated,
+            error: undefined
+        };
+    }
+
+    private getDisplayQuota(account: Account): QuotaResult | null {
+        const cached = this.getCachedQuota(account.email);
+        if (!cached) {
+            return null;
+        }
+
+        if (!this.isInactiveFreeAccount(account, cached) || account.manualUnlock) {
+            return { ...cached, lastUpdated: this.toDate(cached.lastUpdated) };
+        }
+
+        const trackedAccount = this.ensureInactiveFreeTracking(account, cached);
+        const lastResetTimestamp = trackedAccount.lastResetTimestamp;
+        const lastResetDurationMs = trackedAccount.lastResetDurationMs;
+        if (!lastResetTimestamp || !lastResetDurationMs) {
+            return { ...cached, lastUpdated: this.toDate(cached.lastUpdated) };
+        }
+
+        const remainingMs = lastResetDurationMs - (Date.now() - lastResetTimestamp);
+        if (remainingMs > 0) {
+            return { ...cached, lastUpdated: this.toDate(cached.lastUpdated) };
+        }
+
+        const syntheticQuota = this.buildSyntheticFreeFullQuota(trackedAccount, cached);
+        this.quotaCache[account.email] = syntheticQuota;
+        this.accountManager.updateAccount(account.email, {
+            refreshLocked: true,
+            lastResetTimestamp: syntheticQuota.lastUpdated.getTime(),
+            lastResetDurationMs: FREE_INACTIVE_RESET_MS
+        });
+        this.saveQuotaCache();
+        return syntheticQuota;
+    }
+
+    /**
+     * 프리워밍 콜백을 prewarmService에 등록
+     */
+    public wirePrewarmCallbacks(): void {
+        if (this.prewarmService) {
+            this.prewarmService.setCallbacks(
+                () => this.quotaCache,
+                (email, quota) => this.onPrewarmResult(email, quota)
+            );
+        }
+    }
+
+    private isPaidForSort(account: Account): boolean {
+        const quota = this.quotaCache[account.email];
+        return quota?.isPaidAccount === true || account.isPaid || account.tier === 'pro' || account.tier === 'ultra';
+    }
+
+    private getSmartSortRank(account: Account): { group: number; order: number; label: string } {
+        const local = account.email.split('@')[0].toLowerCase();
+        const label = `${account.name} ${account.email}`.toLowerCase();
+        const paid = this.isPaidForSort(account);
+        const valcanoNumber = local.match(/^valcano(\d{4})$/);
+
+        if (local.includes('valcano5740') || label.includes('valcano5740')) {
+            return { group: 0, order: 0, label };
+        }
+        if (local.includes('valcjapan') || label.includes('valcjapan')) {
+            return { group: 1, order: 0, label };
+        }
+        if (valcanoNumber) {
+            const order = parseInt(valcanoNumber[1], 10);
+            if (order >= 1 && order <= 19) {
+                return { group: paid ? 2 : 3, order, label };
+            }
+        }
+        return { group: paid ? 4 : 5, order: Number.MAX_SAFE_INTEGER, label };
+    }
+
+    private getSmartSortedAccounts(accounts: Account[]): Account[] {
+        return [...accounts].sort((a, b) => {
+            const rankA = this.getSmartSortRank(a);
+            const rankB = this.getSmartSortRank(b);
+            if (rankA.group !== rankB.group) return rankA.group - rankB.group;
+            if (rankA.order !== rankB.order) return rankA.order - rankB.order;
+            return rankA.label.localeCompare(rankB.label, 'ko');
+        });
+    }
+
+    private applySmartSort(): void {
+        const sorted = this.getSmartSortedAccounts(this.accountManager.getAccounts());
+        this.accountManager.reorderAccounts(sorted.map(account => account.email));
+        this.addLog('계정 스마트 정렬 적용 완료', 'success');
+        this.refresh();
     }
 
     /**
@@ -137,6 +326,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     this.sendDataToWebview();
                     // 초기 로드 시 Auto-Accept 상태도 전달
                     this.updateAutoAcceptStatus(this.autoAcceptService.isEnabled);
+                    this.updateAutoRetryStatus(this.autoAcceptService.isAutoRetryEnabled);
                     // Pre-warm 상태도 전달
                     if (this.prewarmService) {
                         this._view?.webview.postMessage({ command: 'prewarmStatus', enabled: this.prewarmService.isEnabled });
@@ -173,6 +363,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     this.autoAcceptService.toggle().then(enabled => {
                         this.updateAutoAcceptStatus(enabled);
                     });
+                    break;
+                case 'toggleAutoRetry':
+                    this.autoAcceptService.toggleRetry().then(enabled => {
+                        this.updateAutoRetryStatus(enabled);
+                    });
+                    break;
+                case 'applySmartSort':
+                    this.applySmartSort();
                     break;
                 case 'togglePrewarm':
                     if (this.prewarmService) {
@@ -293,6 +491,44 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                         this.sendDataToWebview();
                     }
                     break;
+                // ========== 잠금 토글 ==========
+                case 'toggleLock':
+                    if (message.email) {
+                        const lockAcc = this.accountManager.getAccount(message.email);
+                        if (lockAcc) {
+                            const newLocked = !lockAcc.refreshLocked;
+                            const lockUpdates: any = { refreshLocked: newLocked };
+                            if (!newLocked) {
+                                lockUpdates.manualUnlock = true;
+                                this.addLog(`🔓 ${message.email} 수동 잠금 해제`, 'info');
+                            } else {
+                                lockUpdates.manualUnlock = false;
+                                this.addLog(`🔒 ${message.email} 수동 잠금`, 'info');
+                            }
+                            this.accountManager.updateAccount(message.email, lockUpdates);
+                            this.sendDataToWebview();
+                        }
+                    }
+                    break;
+                // ========== 스냅샷 진단 ==========
+                case 'diagSnapshots':
+                    if (this.accountSwitcher) {
+                        const snaps = await this.accountSwitcher.getSnapshots();
+                        const snapKeys = Object.keys(snaps);
+                        if (snapKeys.length === 0) {
+                            this.addLog(`📸 스냅샷: 저장된 스냅샷 없음 (0건)`, 'info');
+                        } else {
+                            this.addLog(`📸 스냅샷 ${snapKeys.length}건 저장됨:`, 'info');
+                            for (const snapEmail of snapKeys) {
+                                const s = snaps[snapEmail];
+                                const savedDate = new Date(s.savedAt).toLocaleString('ko-KR');
+                                const dataSize = s.authStatus ? JSON.stringify(s.authStatus).length : 0;
+                                this.addLog(`  ✅ ${snapEmail} (${savedDate}, ${dataSize}자)`, 'info');
+                            }
+                        }
+                        vscode.window.showInformationMessage(`📸 스냅샷 ${snapKeys.length}건 — Output Panel 확인`);
+                    }
+                    break;
             }
         });
     }
@@ -398,7 +634,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         this.addLog(`📋 ${accounts.length}개 계정 (활성: ${activeCount}개)`, 'info');
 
         // 현재 로그인된 이메일 감지하여 활성 계정 설정
-        const currentEmail = await this.tokenService.getCurrentLoggedInEmail();
+        const currentActive = this.accountManager.getAccounts().find(a => a.isActive)?.email;
+        const currentEmail = await this.tokenService.getCurrentLoggedInEmail(currentActive);
         if (currentEmail) {
             const matchingAccount = accounts.find(a => a.email.toLowerCase() === currentEmail.toLowerCase());
             if (matchingAccount) {
@@ -426,7 +663,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
      */
     async refreshActiveOnly(): Promise<void> {
         // 현재 로그인된 이메일 실시간 감지
-        const currentEmail = await this.tokenService.getCurrentLoggedInEmail();
+        const currentActive = this.accountManager.getAccounts().find(a => a.isActive)?.email;
+        const currentEmail = await this.tokenService.getCurrentLoggedInEmail(currentActive);
         if (!currentEmail) {
             console.log('ReRevolve: 현재 로그인된 계정을 감지할 수 없습니다.');
             return;
@@ -470,18 +708,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             return;
         }
 
+        const cachedQuota = this.getCachedQuota(email);
+        if (this.isInactiveFreeAccount(account, cachedQuota) && !account.manualUnlock) {
+            this.ensureInactiveFreeTracking(account, cachedQuota);
+            const displayQuota = this.getDisplayQuota(this.accountManager.getAccount(email) || account);
+            if (displayQuota) {
+                this.quotaCache[email] = displayQuota;
+                this.saveQuotaCache();
+            }
+            this.addLog(`💾 ${email} 무료 비활성 캐시 유지`, 'info');
+            this.refresh();
+            return;
+        }
+
         // 무료 비활성화 계정은 새로고침 잠금
         if (account.refreshLocked) {
             this.addLog(`🔒 ${email} 새로고침 잠금`, 'info');
             return;
         }
-
-        const token = await this.tokenService.getToken(email);
-        if (!token) {
-            this.addLog(`🔑 ${email} 토큰 없음`, 'error');
-            return;
-        }
-        this.addLog(`✅ ${email} 토큰 획득`, 'success');
 
         // 활성 계정: 로컬 LS API 우선 시도 (빠르고 부하 없음)
         let quota = null;
@@ -494,6 +738,13 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         // LS 실패 또는 비활성 계정: Google API fallback
         if (!quota) {
+            const token = await this.tokenService.getToken(email);
+            if (!token) {
+                this.addLog(`🔑 ${email} 토큰 없음`, 'error');
+                return;
+            }
+            this.addLog(`✅ ${email} 토큰 획득`, 'success');
+
             quota = await this.quotaService.fetchQuota(email, token);
             if (quota.error) {
                 this.addLog(`⚠️ ${email}: ${quota.error}`, 'error');
@@ -515,44 +766,112 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         this.quotaCache[email] = quota;
 
-        // 참고: tier는 사용자가 설정한 값 유지 (API 응답으로 자동 변경하지 않음)
-        // refreshLocked도 사용자/시스템이 명시적으로 설정한 경우에만 적용
+        if (!quota.isPaidAccount) {
+            const resetDurationMs = this.parseResetTimeToMs(quota.claudeResetTime);
+            if (resetDurationMs > 0) {
+                this.accountManager.updateAccount(email, {
+                    lastResetTimestamp: this.toDate(quota.lastUpdated).getTime(),
+                    lastResetDurationMs: resetDurationMs
+                });
+            }
+        }
+
+        // API 응답의 isPaidAccount로 tier 자동 판별
+        if (quota.isPaidAccount !== undefined) {
+            const currentAccount = this.accountManager.getAccount(email);
+            if (currentAccount) {
+                const newIsPaid = quota.isPaidAccount;
+                const updates: any = {};
+
+                if (newIsPaid) {
+                    // 유료 판정 → 카운터 리셋, 즉시 반영
+                    this._freeDemotionCount[email] = 0;
+
+                    if (currentAccount.tier !== 'pro' || !currentAccount.isPaid) {
+                        updates.tier = 'pro' as 'free' | 'pro' | 'ultra';
+                        updates.isPaid = true;
+                        this.addLog(`🏷️ ${email} 유형 자동 감지: ⭐ 유료`, 'info');
+                    }
+
+                    // 유료로 승격된 경우 → 잠금 자동 해제
+                    if (currentAccount.refreshLocked) {
+                        updates.refreshLocked = false;
+                        this.addLog(`🔓 ${email} 유료 전환 감지 → 자동 잠금 해제`, 'info');
+                    }
+                } else {
+                    // 무료 판정 → 기존 유료 계정이면 연속 카운터로 보호
+                    if (currentAccount.isPaid || currentAccount.tier === 'pro' || currentAccount.tier === 'ultra') {
+                        this._freeDemotionCount[email] = (this._freeDemotionCount[email] || 0) + 1;
+                        const count = this._freeDemotionCount[email];
+
+                        if (count < SidebarProvider.FREE_DEMOTION_THRESHOLD) {
+                            this.addLog(`⚠️ ${email} 무료 판정 감지 (${count}/${SidebarProvider.FREE_DEMOTION_THRESHOLD}) — 아직 유료 유지`, 'info');
+                            // 강등하지 않고 스킵
+                        } else {
+                            // 연속 N회 무료 → 실제 강등
+                            updates.tier = 'free' as 'free' | 'pro' | 'ultra';
+                            updates.isPaid = false;
+                            this._freeDemotionCount[email] = 0;
+                            this.addLog(`🏷️ ${email} 유형 변경: 🆓 무료 (연속 ${SidebarProvider.FREE_DEMOTION_THRESHOLD}회 확인됨)`, 'info');
+                        }
+                    } else {
+                        // 원래 무료 계정 → 그대로
+                        if (currentAccount.tier !== 'free') {
+                            updates.tier = 'free' as 'free' | 'pro' | 'ultra';
+                            updates.isPaid = false;
+                            this.addLog(`🏷️ ${email} 유형 자동 감지: 🆓 무료`, 'info');
+                        }
+                    }
+
+                    // 무료 계정 → 자동 잠금 (API가 가짜 데이터를 반환하므로 자동 갱신 불필요)
+                    // 단, 활성 계정이거나 수동 해제한 경우(manualUnlock)는 잠금하지 않음
+                    const isTrulyFree = (updates.tier === 'free') || (!updates.tier && currentAccount.tier === 'free');
+                    if (isTrulyFree && !currentAccount.refreshLocked && !currentAccount.manualUnlock && !currentAccount.isActive) {
+                        updates.refreshLocked = true;
+                        this.addLog(`🔒 ${email} 무료 비활성 계정 자동 잠금`, 'info');
+                    }
+                }
+
+                if (Object.keys(updates).length > 0) {
+                    this.accountManager.updateAccount(email, updates);
+                }
+            }
+        }
 
         this.saveQuotaCache();
         this.refresh();
     }
 
     async showAddAccountDialog(): Promise<void> {
-        const email = await vscode.window.showInputBox({
-            prompt: '계정 이메일 주소',
-            placeHolder: 'example@gmail.com',
+        const rawInput = await vscode.window.showInputBox({
+            prompt: '계정 이메일 또는 Gmail 아이디 (예: myid → myid@gmail.com)',
+            placeHolder: 'myid 또는 myid@gmail.com',
             validateInput: (value) => {
-                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!value) return '이메일을 입력하세요';
-                if (!emailRegex.test(value)) return '올바른 이메일 형식이 아닙니다';
+                if (!value || !value.trim()) return '이메일 또는 아이디를 입력하세요';
+                // @가 있으면 정규 이메일 검증, 없으면 아이디로 간주
+                if (value.includes('@')) {
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailRegex.test(value)) return '올바른 이메일 형식이 아닙니다';
+                }
                 return null;
             }
         });
 
-        if (!email) return;
+        if (!rawInput) return;
+
+        // @가 없으면 자동으로 @gmail.com 부착
+        const email = rawInput.includes('@') ? rawInput.trim() : rawInput.trim() + '@gmail.com';
 
         const name = await vscode.window.showInputBox({
-            prompt: '계정 별칭 (선택사항)',
+            prompt: '계정 별칭 (선택사항, Enter로 건너뛰기)',
             placeHolder: email.split('@')[0]
         }) || email.split('@')[0];
 
-        const tierPick = await vscode.window.showQuickPick(
-            [
-                { label: '무료 (Free)', value: 'free' },
-                { label: '유료 (Pro)', value: 'pro' },
-                { label: '울트라 (Ultra)', value: 'ultra' }
-            ],
-            { placeHolder: '계정 유형 선택' }
-        );
-
-        const tier = (tierPick?.value || 'free') as 'free' | 'pro' | 'ultra';
+        // tier는 'free'로 시작, 이후 fetchQuota 시 API가 자동 판별
+        const tier = 'free' as 'free' | 'pro' | 'ultra';
 
         if (this.accountManager.addAccount(email, name, tier)) {
+            this.addLog(`➕ ${email} 추가됨 (유형은 새로고침 시 자동 감지)`, 'info');
             this.refresh();
         }
     }
@@ -569,14 +888,24 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const accounts = this.accountManager.getAccountsSorted();
         const data = accounts.map(account => ({
             ...account,
-            quota: this.quotaCache[account.email] || null,
-            hasToken: false // 비동기라서 일단 false
+            quota: this.getDisplayQuota(account),
+            hasToken: false,
+            hasSnapshot: false
         }));
 
-        // 토큰 상태 비동기 확인
-        Promise.all(accounts.map(a => this.tokenService.hasToken(a.email).catch(() => false))).then(hasTokens => {
-            const dataWithTokens = data.map((d, i) => ({ ...d, hasToken: hasTokens[i] }));
-            this._view?.webview.postMessage({ command: 'updateData', data: dataWithTokens });
+        // 토큰 + 스냅샷 상태 비동기 확인 (병렬)
+        const tokenPromise = Promise.all(accounts.map(a => this.tokenService.hasToken(a.email).catch(() => false)));
+        const snapshotPromise = this.accountSwitcher
+            ? this.accountSwitcher.getSnapshots().catch(() => ({} as Record<string, any>))
+            : Promise.resolve({} as Record<string, any>);
+
+        Promise.all([tokenPromise, snapshotPromise]).then(([hasTokens, snapshots]) => {
+            const dataWithStatus = data.map((d, i) => ({
+                ...d,
+                hasToken: hasTokens[i],
+                hasSnapshot: !!snapshots[d.email]
+            }));
+            this._view?.webview.postMessage({ command: 'updateData', data: dataWithStatus });
         });
     }
 
@@ -687,6 +1016,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             color: white;
         }
         
+        .quota-high { background: rgba(78, 201, 176, 0.2); color: var(--accent-green); }
+        .quota-medium { background: rgba(220, 220, 170, 0.2); color: var(--accent-yellow); }
+        .quota-low { background: rgba(241, 76, 76, 0.2); color: var(--accent-red); }
+        .quota-unknown { background: var(--bg-tertiary); color: var(--text-secondary); }
+        .quota-badges { display: flex; gap: 2px; flex-shrink: 0; align-items: center; }
+        .quota-badges .quota-badge { min-width: 34px; font-size: 10px; padding: 2px 4px; }
         .account-list {
             display: flex;
             flex-direction: column;
@@ -737,6 +1072,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             color: var(--text-secondary);
             font-size: 11px;
             margin-top: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
         
         .tier-badge {
@@ -1110,6 +1448,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             border-color: #28a745;
             color: #28a745;
         }
+
+        .btn-auto-accept.retry.active {
+            background: rgba(245, 158, 11, 0.2);
+            border-color: #f59e0b;
+            color: #f59e0b;
+        }
         
         .btn-pin {
             padding: 8px 10px;
@@ -1213,7 +1557,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     <div class="header">
         <h1>🔄 ReRevolve <span style="font-size:10px;color:var(--text-secondary);font-weight:normal;">v${version}</span></h1>
         <div class="header-actions">
-            <button class="btn" id="sortBtn" onclick="toggleSort()" title="정렬 (기본/쿼터순)">📊</button>
+            <button class="btn" id="sortBtn" onclick="toggleSort()" title="정렬 (기본/쿼터/스마트)">📊</button>
+            <button class="btn" id="applySmartSortBtn" onclick="applySmartSort()" title="스마트 정렬 적용/저장">🧭</button>
             <button class="btn btn-edit-mode" id="editModeBtn" onclick="toggleEditMode()" title="순서 변경 모드">✏️</button>
             <button class="btn" id="globalRefreshBtn" onclick="refreshAll()" title="전체 새로고침">🔄</button>
         </div>
@@ -1241,6 +1586,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             <div class="auto-accept-row">
                 <button id="autoAcceptBtn" class="btn btn-auto-accept" onclick="toggleAutoAccept()" title="Auto-Accept 토글">
                     <span id="autoAcceptIcon">🔴</span> Auto-Accept
+                </button>
+                <button id="autoRetryBtn" class="btn btn-auto-accept retry" onclick="toggleAutoRetry()" title="Auto-Retry 토글">
+                    <span id="autoRetryIcon">🔴</span> Auto-Retry
                 </button>
                 <div class="dropdown">
                     <button class="btn btn-pin dropdown-toggle" onclick="toggleCDPMenu(event)" title="CDP 설정">⚙️</button>
@@ -1305,6 +1653,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         const vscode = acquireVsCodeApi();
         let accountsData = [];
         let autoAcceptEnabled = false;
+        let autoRetryEnabled = false;
         let isPinned = false;
         let isLogVisible = false;
 
@@ -1320,6 +1669,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             } else if (message.command === 'autoAcceptStatus') {
                 autoAcceptEnabled = message.enabled;
                 updateAutoAcceptUI();
+            } else if (message.command === 'autoRetryStatus') {
+                autoRetryEnabled = message.enabled;
+                updateAutoRetryUI();
             } else if (message.command === 'updateLogs') {
                 renderLogs(message.logs);
             } else if (message.command === 'prewarmStatus') {
@@ -1372,6 +1724,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         
         function toggleAutoAccept() {
             vscode.postMessage({ command: 'toggleAutoAccept' });
+        }
+
+        function toggleAutoRetry() {
+            vscode.postMessage({ command: 'toggleAutoRetry' });
         }
         
         function togglePrewarm() {
@@ -1501,6 +1857,18 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
         }
 
+        function updateAutoRetryUI() {
+            const btn = document.getElementById('autoRetryBtn');
+            const icon = document.getElementById('autoRetryIcon');
+            if (autoRetryEnabled) {
+                btn.classList.add('active');
+                icon.textContent = '🟢';
+            } else {
+                btn.classList.remove('active');
+                icon.textContent = '🔴';
+            }
+        }
+
         function renderAccounts() {
             const container = document.getElementById('account-list');
             
@@ -1517,11 +1885,30 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             container.innerHTML = getSortedAccounts().map(account => {
                 const quota = account.quota;
                 const remaining = quota?.claudeRemaining ?? -1;
+                const geminiRemaining = quota?.geminiProRemaining ?? -1;
+                const isCreditOverage = quota?.isCreditOverage === true;
                 const resetTimeRaw = quota?.claudeResetTime || '';
                 
                 // 예상 충전 시간 계산 (갱신 시점 + 남은 충전 시간)
                 let resetDisplay = '정보 없음';
-                if (quota?.lastUpdated && resetTimeRaw) {
+                // 무료 비활성 계정: 로컬 카운트다운 기반 표시
+                if (account.refreshLocked && account.lastResetTimestamp && account.lastResetDurationMs) {
+                    const elapsed = Date.now() - account.lastResetTimestamp;
+                    const remainingMs = account.lastResetDurationMs - elapsed;
+                    if (remainingMs <= 0) {
+                        // 카운트다운 완료 → 충전 완료 표시
+                        resetDisplay = '✅ 충전 완료';
+                    } else {
+                        const remainDays = Math.floor(remainingMs / 86400000);
+                        const remainHours = Math.floor((remainingMs % 86400000) / 3600000);
+                        const remainMinutes = Math.floor((remainingMs % 3600000) / 60000);
+                        if (remainDays > 0) {
+                            resetDisplay = remainDays + '일 ' + remainHours + '시간 (추정)';
+                        } else {
+                            resetDisplay = remainHours + '시간 ' + remainMinutes + '분 (추정)';
+                        }
+                    }
+                } else if (quota?.lastUpdated && resetTimeRaw) {
                     const lastUpdatedDate = new Date(quota.lastUpdated);
                     // resetTimeRaw는 "7일 0시간", "4시간 58분" 같은 형태
                     const dayMatch = resetTimeRaw.match(/(\\d+)일/);
@@ -1563,6 +1950,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     else if (remaining > 20) quotaClass = 'quota-medium';
                     else quotaClass = 'quota-low';
                 }
+                const claudeTitle = isCreditOverage ? 'Claude - AI 크레딧 사용 중' : 'Claude';
+
+                let geminiQuotaClass = 'quota-unknown';
+                let geminiQuotaText = '?';
+                if (geminiRemaining >= 0) {
+                    geminiQuotaText = geminiRemaining + '%';
+                    if (geminiRemaining > 50) geminiQuotaClass = 'quota-high';
+                    else if (geminiRemaining > 20) geminiQuotaClass = 'quota-medium';
+                    else geminiQuotaClass = 'quota-low';
+                }
 
                 const tierClass = 'tier-' + account.tier;
                 const tierLabel = account.tier === 'ultra' ? '💎' : account.tier === 'pro' ? '⭐' : '🆓';
@@ -1583,13 +1980,17 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                                     <span class="tier-badge \${tierClass}" onclick="toggleTier('\${account.email}')" title="클릭하여 유형 변경">\${tierLabel}</span>
                                     \${isLocked ? '🔒' : ''}
                                 </div>
-                                <div class="account-email">\${account.email} \${hasToken ? '<span style="color:#4ade80;" title="토큰 캡처됨">🔑</span>' : '<span style="color:#f87171;" title="토큰 없음">❌</span>'}</div>
+                                <div class="account-email">\${account.email} \${hasToken ? '<span style="color:#4ade80;" title="토큰 캡처됨">🔑</span>' : '<span style="color:#f87171;" title="토큰 없음">❌</span>'} \${account.hasSnapshot ? '<span style="color:#60a5fa;" title="스냅샷 저장됨">📸</span>' : ''}</div>
                             </div>
-                            <span class="quota-badge \${quotaClass}">\${quotaText}</span>
+                            <div class="quota-badges">
+                                <span class="quota-badge \${quotaClass}" title="\${claudeTitle}">C \${quotaText}\${isCreditOverage ? ' 💳' : ''}</span>
+                                <span class="quota-badge \${geminiQuotaClass}" title="Gemini Pro" style="margin-left:3px;">G \${geminiQuotaText}</span>
+                            </div>
                         </div>
                         <div class="account-details">
                             <div class="time-info">
                                 <div class="time-row">⏰ 남은 시간: \${resetTimeDisplay}</div>
+                                \${isCreditOverage ? '<div class="time-row" style="color:var(--accent-red);">💳 모델 쿼터 소진, AI 크레딧 사용 중</div>' : ''}
                                 <div class="time-row">🔋 재충전 예정: \${resetDisplay}</div>
                                 <div class="time-row" style="font-size:11px;color:#666;">📅 마지막 갱신: \${updatedDisplay}</div>
                             </div>
@@ -1603,6 +2004,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                                     <div class="dropdown-menu" id="dropdown-\${account.email.replace(/[@.]/g, '_')}">
                                         <button onclick="captureToken('\${account.email}')">🔑 토큰 캡처</button>
                                         <button onclick="switchToAccount('\${account.email}')">🔄 계정 전환</button>
+                                        <button onclick="toggleLock('\${account.email}')">\${isLocked ? '🔓 잠금 해제' : '🔒 잠금'}</button>
                                         <button onclick="editAccountName('\${account.email}')">✏️ 이름 수정</button>
                                         <button onclick="removeAccount('\${account.email}')" class="danger">🗑️ 삭제</button>
                                     </div>
@@ -1662,20 +2064,68 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.postMessage({ command: 'toggleTier', email });
         }
 
+        function toggleLock(email) {
+            vscode.postMessage({ command: 'toggleLock', email });
+        }
+
+        function diagSnapshots() {
+            vscode.postMessage({ command: 'diagSnapshots' });
+        }
+
         // ============ 정렬 기능 ============
-        let sortMode = 'default'; // 'default' or 'quota'
+        let sortMode = 'default'; // 'default', 'quota', 'smart'
         
         function toggleSort() {
-            sortMode = sortMode === 'default' ? 'quota' : 'default';
+            sortMode = sortMode === 'default' ? 'quota' : sortMode === 'quota' ? 'smart' : 'default';
             const btn = document.getElementById('sortBtn');
-            btn.classList.toggle('sort-active', sortMode === 'quota');
-            btn.title = sortMode === 'quota' ? '정렬 (쿼터순 활성)' : '정렬 (기본순)';
+            btn.classList.toggle('sort-active', sortMode !== 'default');
+            btn.textContent = sortMode === 'quota' ? '📊' : sortMode === 'smart' ? '🧭' : '📊';
+            btn.title = sortMode === 'quota' ? '정렬 (쿼터순 활성)' : sortMode === 'smart' ? '정렬 (스마트순 활성)' : '정렬 (기본순)';
             renderAccounts();
+        }
+
+        function isPaidForSort(account) {
+            return account.quota?.isPaidAccount === true || account.isPaid || account.tier === 'pro' || account.tier === 'ultra';
+        }
+
+        function getSmartRank(account) {
+            const local = String(account.email || '').split('@')[0].toLowerCase();
+            const label = (String(account.name || '') + ' ' + String(account.email || '')).toLowerCase();
+            const paid = isPaidForSort(account);
+            const valcanoNumber = local.match(/^valcano(\d{4})$/);
+
+            if (local.includes('valcano5740') || label.includes('valcano5740')) return { group: 0, order: 0, label };
+            if (local.includes('valcjapan') || label.includes('valcjapan')) return { group: 1, order: 0, label };
+            if (valcanoNumber) {
+                const order = parseInt(valcanoNumber[1], 10);
+                if (order >= 1 && order <= 19) return { group: paid ? 2 : 3, order, label };
+            }
+            return { group: paid ? 4 : 5, order: Number.MAX_SAFE_INTEGER, label };
+        }
+
+        function compareSmartAccounts(a, b) {
+            const rankA = getSmartRank(a);
+            const rankB = getSmartRank(b);
+            if (rankA.group !== rankB.group) return rankA.group - rankB.group;
+            if (rankA.order !== rankB.order) return rankA.order - rankB.order;
+            return rankA.label.localeCompare(rankB.label, 'ko');
+        }
+
+        function applySmartSort() {
+            sortMode = 'smart';
+            vscode.postMessage({ command: 'applySmartSort' });
+            const btn = document.getElementById('sortBtn');
+            btn.classList.add('sort-active');
+            btn.textContent = '🧭';
+            btn.title = '정렬 (스마트순 활성)';
         }
         
         function getSortedAccounts() {
             if (sortMode === 'default') {
                 return [...accountsData];
+            }
+            if (sortMode === 'smart') {
+                return [...accountsData].sort(compareSmartAccounts);
             }
             
             // 쿼터순 정렬: 쿼터 큰순 > 유료 우선 > 재충전 빠른순

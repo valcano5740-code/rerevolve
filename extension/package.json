@@ -2,7 +2,7 @@
   "name": "rerevolve-quota-manager",
   "displayName": "ReRevolve Quota Manager",
   "description": "Antigravity 다중 계정 Claude 쿼터 관리 확장프로그램",
-  "version": "8.3.1",
+  "version": "8.4.0",
   "publisher": "rerevolve",
   "engines": {
     "vscode": "^1.85.0"
@@ -60,6 +60,11 @@
         "icon": "$(rocket)"
       },
       {
+        "command": "rerevolve.toggleAutoRetry",
+        "title": "ReRevolve: Auto-Retry 토글",
+        "icon": "$(debug-restart)"
+      },
+      {
         "command": "rerevolve.saveSnapshot",
         "title": "ReRevolve: 현재 계정 스냅샷 저장"
       },
@@ -86,6 +91,11 @@
         "command": "rerevolve.toggleAutoAccept",
         "key": "ctrl+alt+shift+a",
         "mac": "cmd+alt+shift+a"
+      },
+      {
+        "command": "rerevolve.toggleAutoRetry",
+        "key": "ctrl+alt+shift+r",
+        "mac": "cmd+alt+shift+r"
       }
     ],
     "menus": {
@@ -115,6 +125,11 @@
           "default": false,
           "description": "Auto-Accept 활성화 상태 (모든 세션 동기화)"
         },
+        "rerevolve.autoRetryEnabled": {
+          "type": "boolean",
+          "default": false,
+          "description": "Auto-Retry 활성화 상태: Retry/Continue 복구 버튼만 자동 클릭"
+        },
         "rerevolve.prewarmEnabled": {
           "type": "boolean",
           "default": false,
@@ -127,7 +142,7 @@
     "vscode:prepublish": "node esbuild.js --production",
     "compile": "node esbuild.js",
     "watch": "tsc -watch -p ./",
-    "package": "node esbuild.js --production && vsce package --no-dependencies"
+    "package": "node esbuild.js --production && vsce package --no-dependencies --allow-missing-repository && node sync-gd-release.js"
   },
   "devDependencies": {
     "@types/node": "^20.10.0",

@@ -15,6 +15,8 @@ const execAsync = promisify(exec);
 interface LanguageServerInfo {
     port: number;
     csrfToken: string;
+    protocol?: 'http' | 'https';
+    statusPath?: string;
 }
 
 interface UserStatusResponse {
@@ -40,7 +42,7 @@ export class LanguageServerClient {
      * 현재 캐시된 LS 서버 정보 반환 (PowerShell 호출 없음)
      * quota-service에서 재사용하기 위한 getter
      */
-    getCachedServerInfo(): { port: number; csrfToken: string } | null {
+    getCachedServerInfo(): LanguageServerInfo | null {
         return this.serverInfo;
     }
 
@@ -155,15 +157,15 @@ export class LanguageServerClient {
             // Windows: PowerShell로 language_server 프로세스 명령줄 추출
             if (process.platform === 'win32') {
                 const { stdout } = await execAsync(
-                    `Get-WmiObject Win32_Process -Filter "name='language_server_windows_x64.exe'" | Select-Object CommandLine | Format-List`,
+                    `Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'language_server_windows_x64.exe' } | Select-Object ProcessId,CommandLine | ConvertTo-Json -Compress`,
                     { shell: 'powershell.exe', timeout: 10000 }
                 );
 
-                const info = this.parseCommandLine(stdout);
+                const info = await this.detectWindowsServer(stdout);
                 if (info) {
                     this.serverInfo = info;
                     this.lastDetectTime = Date.now();
-                    console.log(`ReRevolve LS: Server detected on port ${info.port}`);
+                    console.log(`ReRevolve LS: Server detected on ${info.protocol || 'http'} port ${info.port}`);
                     return info;
                 }
             }
@@ -193,21 +195,106 @@ export class LanguageServerClient {
         return null;
     }
 
+    private async detectWindowsServer(stdout: string): Promise<LanguageServerInfo | null> {
+        const processes = this.parseWindowsProcesses(stdout);
+
+        // 워크스페이스가 붙은 LS가 현재 창의 실제 사용자 상태를 가장 잘 반영한다.
+        processes.sort((a, b) => Number(b.commandLine.includes('--workspace_id')) - Number(a.commandLine.includes('--workspace_id')));
+
+        for (const proc of processes) {
+            const csrfToken = this.extractArg(proc.commandLine, 'csrf_token');
+            if (!csrfToken) continue;
+
+            const listenPorts = await this.getListeningPorts(proc.processId);
+            const validated = await this.findWorkingStatusEndpoint(listenPorts, csrfToken);
+            if (validated) return validated;
+
+            const legacy = this.parseCommandLine(proc.commandLine);
+            if (legacy) return legacy;
+        }
+
+        return null;
+    }
+
+    private parseWindowsProcesses(stdout: string): Array<{ processId: number; commandLine: string }> {
+        const trimmed = stdout.trim();
+        if (!trimmed) return [];
+
+        try {
+            const parsed = JSON.parse(trimmed) as any;
+            const rows = Array.isArray(parsed) ? parsed : [parsed];
+            return rows
+                .map(row => ({
+                    processId: Number(row.ProcessId),
+                    commandLine: String(row.CommandLine || '')
+                }))
+                .filter(row => row.processId > 0 && row.commandLine.length > 0);
+        } catch {
+            const commandLines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+            return commandLines.map((commandLine, index) => ({ processId: index, commandLine }));
+        }
+    }
+
+    private async getListeningPorts(processId: number): Promise<number[]> {
+        if (!processId) return [];
+
+        try {
+            const { stdout } = await execAsync(
+                `Get-NetTCPConnection -OwningProcess ${processId} -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty LocalPort`,
+                { shell: 'powershell.exe', timeout: 10000 }
+            );
+            return [...new Set(stdout.split(/\s+/).map(v => parseInt(v, 10)).filter(v => Number.isFinite(v)))]
+                .sort((a, b) => a - b);
+        } catch {
+            return [];
+        }
+    }
+
+    private async findWorkingStatusEndpoint(ports: number[], csrfToken: string): Promise<LanguageServerInfo | null> {
+        const paths = [
+            '/exa.language_server_pb.LanguageServerService/GetUserStatus',
+            '/v1internal:getUserStatus'
+        ];
+
+        // Antigravity 1.23+는 실제 HTTPS/HTTP 포트를 명령줄에 노출하지 않고 Listen 포트로만 확인된다.
+        for (const port of ports) {
+            for (const protocol of ['https', 'http'] as const) {
+                for (const statusPath of paths) {
+                    const status = await this.fetchUserStatus({ port, csrfToken, protocol, statusPath });
+                    if (status?.userStatus?.email) {
+                        return { port, csrfToken, protocol, statusPath };
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private extractArg(cmdLine: string, name: string): string | null {
+        const match = cmdLine.match(new RegExp(`--?${name}[=\\s]+([^\\s]+)`, 'i'));
+        return match?.[1] || null;
+    }
+
 
 
     /**
      * 명령줄에서 포트와 CSRF 토큰 추출
      */
     private parseCommandLine(cmdLine: string): LanguageServerInfo | null {
-        // --agent_port=12345 또는 -agent_port 12345
-        const portMatch = cmdLine.match(/--?agent_port[=\s]+(\d+)/);
+        // --agent_port=12345 또는 -agent_port 12345 (Antigravity 1.20.x)
+        // --https_server_port=12345 (일부 고정 포트/재시작 시나리오)
+        const portMatch = cmdLine.match(/--?agent_port[=\s]+(\d+)/)
+            || cmdLine.match(/--?https_server_port[=\s]+(\d+)/);
         // --csrf_token=xxx 또는 -csrf_token xxx
         const tokenMatch = cmdLine.match(/--?csrf_token[=\s]+([a-f0-9-]+)/i);
 
         if (portMatch && tokenMatch) {
             return {
                 port: parseInt(portMatch[1], 10),
-                csrfToken: tokenMatch[1]
+                csrfToken: tokenMatch[1],
+                protocol: 'https',
+                statusPath: '/exa.language_server_pb.LanguageServerService/GetUserStatus'
             };
         }
 
@@ -226,13 +313,19 @@ export class LanguageServerClient {
             }
         });
 
+        if (info.protocol && info.statusPath) {
+            return this.httpRequest(info.protocol, info, body, info.statusPath);
+        }
+
         // HTTPS 먼저 시도, 실패하면 HTTP
         for (const protocol of ['https', 'http'] as const) {
-            try {
-                const result = await this.httpRequest(protocol, info, body);
-                if (result) return result;
-            } catch {
-                // 다음 프로토콜 시도
+            for (const path of ['/exa.language_server_pb.LanguageServerService/GetUserStatus', '/v1internal:getUserStatus']) {
+                try {
+                    const result = await this.httpRequest(protocol, info, body, path);
+                    if (result) return result;
+                } catch {
+                    // 다음 프로토콜/경로 시도
+                }
             }
         }
 
@@ -245,16 +338,18 @@ export class LanguageServerClient {
     private httpRequest(
         protocol: 'http' | 'https',
         info: LanguageServerInfo,
-        body: string
+        body: string,
+        requestPath: string
     ): Promise<UserStatusResponse | null> {
         return new Promise((resolve) => {
             const options = {
                 hostname: '127.0.0.1',
                 port: info.port,
-                path: '/v1internal:getUserStatus',
+                path: requestPath,
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body),
                     'Connect-Protocol-Version': '1',
                     'X-Codeium-Csrf-Token': info.csrfToken
                 },

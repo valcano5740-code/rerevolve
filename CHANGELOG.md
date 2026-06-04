@@ -5,6 +5,87 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [8.3.10] - 2026-04-08 🎯 프리워밍 스마트 개선 + Retry 자동 클릭
+
+### Added
+- 🎯 **프리워밍 스마트 필터링**:
+  - 유료 비활성 계정: resetTime "5시간 0분/1분"(미활성)인 경우만 프리워밍
+  - 무료 비활성 계정: `refreshLocked`여도 토큰이 있으면 프리워밍 대상
+  - 이미 카운트다운 중인 계정은 자동 스킵
+- ⏳ **무료계정 로컬 카운트다운**: API 마지막 응답 시점 기준으로 남은시간을 로컬 계산
+  - 카운트다운 0 도달 → "✅ 충전 완료" 표시
+  - "(추정)" 라벨로 실제 API 값과 구분
+- 🔄 **Retry 자동 클릭**: "Agent terminated due to error" 에러 다이얼로그의 Retry 버튼 자동 클릭
+
+### Changed
+- Account 인터페이스에 `lastResetTimestamp`, `lastResetDurationMs` 필드 추가
+- prewarm-service ↔ sidebar-provider 콜백 연동 (스마트 필터링용 quotaCache 공유)
+
+---
+
+## [8.3.9] - 2026-04-08 🔧 CDP 자동 승낙 AAA v13 방식 동기화
+
+### Changed
+- 🔧 **CDP Handler 전면 재작성** (AAA v13 방식 동기화):
+  - Stateless WebSocket → **영구 WebSocket** 연결 (연결 끊김 자동 감지/재연결)
+  - **워크스페이스 이름 필터 제거** → 모든 page/webview에 스크립트 주입
+  - 스크립트 주입 추적: 매번 `typeof` 체크 → `conn.injected` 플래그
+- ❌ **VS Code 명령어 폴링 제거**: `ACCEPT_COMMANDS` (10개 명령어) 직접 실행 제거
+  - 버튼 클릭은 CDP 주입 스크립트(`cdp-auto-accept.js`)에 100% 위임
+  - 폴링은 CDP keep-alive + 새 페이지 감지 목적으로만 유지
+
+---
+
+## [8.3.8] - 2026-04-07 🔧 CDP 설정 프롬프트 중복 제거
+
+### Fixed
+- 🔧 **CDP 설정 팝업 반복 방지**: `ensureSetup()`에서 TCP 포트 9000 연결 체크 추가
+  - CDP가 이미 열려있으면(Boost 실행 중) `cdpSetupDone` 자동 설정 + 팝업 건너뜀
+  - `verifyShortcutHasCDP()` PowerShell 중첩 실행 실패로 매번 플래그 리셋되던 문제 해소
+
+---
+
+## [8.3.7] - 2026-04-07 ⚡ 활성 계정 플리커링 완전 제거
+
+### Fixed
+- ⚡ **시작 시 이전 계정 캐시 표시 방지**: 확장 활성화 직후(0초) `refreshActiveOnly()` 즉시 호출
+  - 이전: 사이드바가 globalState 캐시(이전 세션 계정)로 먼저 렌더링 → 1~5초 후 갱신
+  - 이후: vscdb SQL로 활성 계정 즉시 확정 후 렌더링
+- 🔧 **onDidChangeSessions 이벤트 지연**: 세션 변경 시 2초 지연 후 갱신
+  - vscdb가 새 이메일을 반영할 시간을 확보하여 stale 데이터 표시 방지
+
+### Changed
+- 🔄 **감지 전략 순서 변경** (정확도 순):
+  - 0단계: vscdb SQL 직접 쿼리 (가장 정확, 항상 최신) ← 이전 3단계
+  - 1단계: LS HTTP 경량 조회
+  - 2단계: LS Full detect
+  - 3단계: auth provider 세션 (토큰 stale 가능) ← 이전 0단계
+
+---
+
+## [8.3.6] - 2026-04-07 🔄 감지 전략 순서 최적화
+
+### Changed
+- vscdb SQL을 최우선 전략으로 승격 (auth provider의 stale 토큰으로 인한 플리커링 방지)
+
+---
+
+## [8.3.5] - 2026-04-07 🗄️ SQL 기반 활성 계정 감지
+
+### Changed
+- 🗄️ **getCurrentLoggedInEmailFromVscdb → SQL 직접 쿼리**
+  - 이전: SQLite 바이너리를 UTF-8 문자열로 읽어서 정규식 매칭 (페이지 분산 시 실패)
+  - 이후: `sql.js`로 `SELECT value FROM ItemTable WHERE key='antigravityAuthStatus'` 직접 쿼리
+  - `antigravityAuthStatus` JSON 파싱 → email 필드 직접 추출
+  - `db.close()` finally 블록 추가 (리소스 누수 방지)
+
+### Fixed
+- 🐛 **PowerShell 이스케이프 수정**: `reg add` → PowerShell 네이티브 cmdlet + 임시 `.ps1` 파일 실행
+  - 레지스트리 등록 시 이중 이스케이프로 `Invalid syntax` 오류 발생하던 문제 해결
+- 🛡️ **CDP 설정 거부 시 Auto-Accept 안전장치**: `ensureSetup()` 반환값 체크
+  - CDP 설정 거부해도 Auto-Accept가 ON되던 문제 수정
+
+---
 ## [6.10.2] - 2026-02-24 🐛 쿼터 100% 깜빡임 버그 수정
 
 ### Fixed

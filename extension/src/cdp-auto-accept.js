@@ -142,7 +142,6 @@
         const hasStepInputMarkers = () => {
             const markers = [
                 'step requires input',
-                'ask every time',
                 'reject | run',
                 'run command',
                 'command?',
@@ -163,25 +162,7 @@
             return false;
         };
 
-        const hasErrorRecoveryMarkers = () => {
-            const markers = [
-                'agent execution terminated due to error',
-                'terminated due to error',
-                'continue generating',
-                'execution error'
-            ];
 
-            for (const doc of getDocuments()) {
-                try {
-                    const text = ((doc.body && doc.body.textContent) || '').toLowerCase();
-                    if (markers.some(marker => text.includes(marker))) {
-                        return true;
-                    }
-                } catch (e) { }
-            }
-
-            return false;
-        };
 
         const isUserTyping = () => {
             const active = document.activeElement;
@@ -310,7 +291,6 @@
                     if (!t) return false;
                     return (
                         t.includes('run command') ||
-                        t.includes('ask every time') ||
                         t.includes('step requires input') ||
                         (t.includes('reject') && (t.includes('run') || t.includes('runalt')))
                     );
@@ -368,7 +348,7 @@
             }
         };
 
-        const ACTION_NODE_SELECTOR = 'button, [role="button"], a[role="button"]';
+        const ACTION_NODE_SELECTOR = 'button, [role="button"], a[role="button"], div[class*="button"], span[class*="button"], div[class*="action"], span[class*="action"], .monaco-button';
         const PERMISSION_PROMPT_MARKERS = [
             'opening url in browser',
             'needs permission to act on',
@@ -605,19 +585,135 @@
             }
             return false;
         })();
-        const hasGlobalRecoveryError = hasErrorRecoveryMarkers();
-        // 1.55) Automatic recovery after agent error (Continue Generating)
-        if (hasGlobalRecoveryError) {
-            for (const btn of allActionButtons) {
+        // 에러 복구/command input 쿨다운 — DOM이 재렌더링되어도 같은 입력을 중복 전송하지 않음
+        const _state = window.__autoAcceptFreeState = window.__autoAcceptFreeState || {};
+        const ERROR_RECOVERY_COOLDOWN_MS = 15000;
+        const COMMAND_INPUT_COOLDOWN_MS = 25000;
+        const EXECUTOR_BUSY_COOLDOWN_MS = 30000;
+        const timeSinceLastRecovery = _state.lastErrorRecoveryAt ? (Date.now() - _state.lastErrorRecoveryAt) : Infinity;
+        const isInRecoveryCooldown = timeSinceLastRecovery < ERROR_RECOVERY_COOLDOWN_MS || Date.now() < Number(_state.recoveryActionLockUntil || 0);
+        const enableAccept = _state.enableAccept === true;
+        const enableRetry = _state.enableRetry === true;
+        const hasExecutorBusyMessage = (() => {
+            for (const doc of getDocuments()) {
+                try {
+                    const text = ((doc.body && doc.body.textContent) || '').toLowerCase();
+                    if (text.includes('executor has not processed the previous input yet') || text.includes('previous input yet')) {
+                        return true;
+                    }
+                } catch (e) { }
+            }
+            return false;
+        })();
+
+        if (hasExecutorBusyMessage) {
+            _state.lastExecutorBusyAt = Date.now();
+            _state.recoveryActionLockUntil = Date.now() + EXECUTOR_BUSY_COOLDOWN_MS;
+            window.__autoAcceptFreeState = _state;
+            log('Executor is still processing previous input; pausing recovery clicks');
+            return clickedCount;
+        }
+
+        const isRecoveryActionLocked = (kind, signature = '', cooldownMs = ERROR_RECOVERY_COOLDOWN_MS) => {
+            const now = Date.now();
+            if (now < Number(_state.recoveryActionLockUntil || 0)) return true;
+            if ((now - Number(_state.lastExecutorBusyAt || 0)) < EXECUTOR_BUSY_COOLDOWN_MS) return true;
+            if (_state.lastRecoveryKind === kind && _state.lastRecoverySignature === signature && (now - Number(_state.lastRecoveryActionAt || 0)) < cooldownMs) {
+                return true;
+            }
+            return false;
+        };
+
+        const recordRecoveryAction = (kind, signature = '', cooldownMs = ERROR_RECOVERY_COOLDOWN_MS) => {
+            const now = Date.now();
+            _state.lastErrorRecoveryAt = now;
+            _state.lastRecoveryActionAt = now;
+            _state.lastRecoveryKind = kind;
+            _state.lastRecoverySignature = signature;
+            _state.recoveryActionLockUntil = now + cooldownMs;
+            window.__autoAcceptFreeState = _state;
+        };
+
+        // 1.55) Automatic recovery after agent error (Retry)
+        // 에러 다이얼로그는 promptContainers 셀렉터에 안 걸릴 수 있으므로 전역 스캔
+        if (enableRetry && !isInRecoveryCooldown) {
+            const globalButtons = queryAll(ACTION_NODE_SELECTOR);
+            const retryButtons = globalButtons.filter(b => /\bretry\b/i.test(getActionText(b)));
+            if (retryButtons.length > 0) {
+                log('[1.55 DEBUG] Retry 버튼 ' + retryButtons.length + '개 발견 / 전체 버튼 ' + globalButtons.length + '개');
+            }
+            for (const btn of globalButtons) {
                 const text = getActionText(btn);
-                const isContinueGenerating = text.includes('continue generating') || /^continue(\b|\s)/i.test(text);
-                if (isContinueGenerating && clickElement(btn)) {
-                    log(`Flow recovered automatically after error: "${text}"`);
+                const isRetryBtn = /\bretry\b/i.test(text);
+                if (!isRetryBtn) continue;
+                const retrySignature = getRunPromptSignature(btn, findActionContext(btn) || btn.parentElement || btn);
+                if (isRecoveryActionLocked('retry', retrySignature)) continue;
+
+                // 에러 컨텍스트 판별: 버튼 주변 10단계까지 올라가며 탐색
+                let ancestor = btn.parentElement;
+                let found = false;
+                for (let i = 0; i < 10 && ancestor; i++) {
+                    const t = (ancestor.textContent || '').toLowerCase();
+                    const cls = String(ancestor.className || '').toLowerCase();
+
+                    // 1) 에러 텍스트 패턴 (넓은 범위)
+                    const errorPatterns = [
+                        'terminated due to error',
+                        'agent terminated',
+                        'something went wrong',
+                        'high traffic',
+                        'unexpected error',
+                        'an error occurred',
+                        'request failed',
+                        'rate limit',
+                        'try again',
+                        'timed out',
+                        'connection error',
+                        'server error',
+                        'internal error',
+                        'failed to',
+                        'could not complete'
+                    ];
+                    if (errorPatterns.some(p => t.includes(p))) {
+                        found = true;
+                        break;
+                    }
+
+                    // 2) CSS 클래스에 error/warning 포함
+                    if (/\berror\b|\bwarning\b|\bfailed\b|\balert\b/.test(cls)) {
+                        found = true;
+                        break;
+                    }
+
+                    ancestor = ancestor.parentElement;
+                }
+
+                // 3) 최후 폴백: Retry 버튼이 단독이면 (형제 액션 버튼 없음) 에러 상황으로 간주
+                if (!found) {
+                    const parent = btn.parentElement;
+                    if (parent) {
+                        const siblings = Array.from(parent.querySelectorAll(ACTION_NODE_SELECTOR))
+                            .filter(s => s !== btn);
+                        // Retry만 단독 존재하면 에러 복구 버튼일 가능성 높음
+                        if (siblings.length === 0) {
+                            found = true;
+                        }
+                    }
+                }
+
+                if (found && clickElement(btn)) {
+                    recordRecoveryAction('retry', retrySignature);
+                    log('Flow recovered automatically after error: "' + text + '" (cooldown ' + ERROR_RECOVERY_COOLDOWN_MS + 'ms set)');
                     return clickedCount;
                 }
             }
         }
 
+        if (isInRecoveryCooldown) {
+            return clickedCount;
+        }
+
+        if (enableAccept) {
         const runCandidates = [];
         const nowForRun = Date.now();
         const hasRecentPermissionOrigin = queryAll('[data-aaf-permission-origin-at]').some(node => {
@@ -740,14 +836,12 @@
 
                         const hasStepMarker = [
                             'run command',
-                            'ask every time',
                             'step requires input',
                             'requires input',
                             'run alt',
                             'runalt',
                             'alt+enter',
                             'alt+',
-                            'always run',
                             'command?'
                         ].some(marker => contextText.includes(marker));
 
@@ -782,14 +876,12 @@
                 const hasReject = neighbors.some(el => /\breject\b|\bdeny\b|\bcancel\b/i.test(getActionText(el)));
                 const hasStepMarker = [
                     'run command',
-                    'ask every time',
                     'step requires input',
                     'requires input',
                     'run alt',
                     'runalt',
                     'alt+enter',
                     'alt+',
-                    'always run',
                     'command?'
                 ].some(marker => contextText.includes(marker));
 
@@ -835,7 +927,7 @@
                         return isRunActionText(t) || /\breject\b/i.test(t) || /\balways\s+run\b/i.test(t);
                     });
 
-                    const hasStepMarkerNearby = ['step requires input', 'ask every time', 'requires input'].some(marker => containerText.includes(marker));
+                    const hasStepMarkerNearby = ['step requires input', 'requires input'].some(marker => containerText.includes(marker));
 
                     if ((hasRunOrRejectNearby || hasStepMarkerNearby) && clickElement(btn)) {
                         state.lastExpandClickAt = now;
@@ -859,7 +951,7 @@
                 const containerText = getActionText(container || btn);
                 const neighbors = container ? Array.from(container.querySelectorAll(ACTION_NODE_SELECTOR)) : [];
                 const hasRejectNearby = neighbors.some(el => /\breject\b|\bdeny\b|\bcancel\b/i.test(getActionText(el)));
-                const hasInputSignals = ['step requires input', 'ask every time', 'requires input', 'permission', 'browser'].some(marker => containerText.includes(marker));
+                const hasInputSignals = ['step requires input', 'requires input', 'permission', 'browser'].some(marker => containerText.includes(marker));
 
                 if ((hasInputSignals || hasRejectNearby) && clickElement(btn)) {
                     log(`Step permission approved automatically: "${text}"`);
@@ -872,31 +964,14 @@
             clickedCount++;
             return clickedCount;
         }
-
-        // 1.6) Continue paused/interrupted flow
-        for (const btn of allActionButtons) {
-            const text = getActionText(btn);
-            const isContinueButton = /\bcontinue\b/i.test(text);
-            if (!isContinueButton) continue;
-
-            const container = findActionContext(btn);
-            if (!container) continue;
-
-            const containerText = getActionText(container);
-            const neighbors = Array.from(container.querySelectorAll(ACTION_NODE_SELECTOR));
-            const hasPauseSignal = ['stopped', 'paused', 'interrupted', 'retry', 'continue'].some(word => containerText.includes(word));
-            const hasControlPair = neighbors.some(el => /\b(reject|cancel|retry|stop)\b/i.test(getActionText(el)));
-            const hasInputSignal = ['step requires input', 'requires input', 'ask every time', 'continue generating'].some(word => containerText.includes(word));
-
-            if ((hasPauseSignal || hasControlPair || hasInputSignal) && clickElement(btn)) {
-                log(`Flow resumed automatically: "${text}"`);
-                return clickedCount;
-            }
         }
 
-        // Hard-disable broad generic auto-click fallback to prevent random IDE clicks.
-        // Remaining logic already handles explicit command/permission/recovery prompts above.
-        return clickedCount;
+        if (!enableAccept) {
+            return clickedCount;
+        }
+
+        // Accept All / Apply / Keep 등 일반 수락 버튼 처리
+        // 안전장치: isScopedToPrompt(다이얼로그 내부만) + negativeKeywords(deny/cancel 제외)
 
         // 2) Normal flow: accept/apply while avoiding negative actions
         if (isUserTyping()) {
@@ -911,8 +986,6 @@
             'apply all',
             'always allow',
             'allow once',
-            'continue',
-            'retry',
             'proceed',
             'run command',
             'run in terminal'
@@ -941,7 +1014,18 @@
             const isAllowedAction = acceptKeywords.some(keyword => normalized === keyword || normalized.startsWith(`${keyword} `));
 
             if (isAllowedAction) {
+                // continue/retry는 쿨다운 중이면 스킵 (중복 클릭 방지)
+                const isRecoveryGenericAction = /\b(continue|retry)\b/i.test(normalized);
+                const genericRecoverySignature = isRecoveryGenericAction ? getRunPromptSignature(btn, btn.closest('[role="dialog"], .notification-toast, .notification-list-item, .monaco-dialog-box, .monaco-dialog-modal-block, .chat-tool-call, .chat-tool-response, [class*="tool-call"], [data-testid*="tool-call"]') || btn.parentElement || btn) : '';
+                if (isRecoveryGenericAction && (isInRecoveryCooldown || isRecoveryActionLocked(normalized.includes('retry') ? 'retry' : 'continue', genericRecoverySignature))) {
+                    continue;
+                }
                 if (clickElement(btn)) {
+                    if (isRecoveryGenericAction) {
+                        recordRecoveryAction(normalized.includes('retry') ? 'retry' : 'continue', genericRecoverySignature);
+                        log(`Clicked recovery button: "${actionText}"`);
+                        return clickedCount;
+                    }
                     log(`Clicked button: "${actionText}"`);
                 }
             }
@@ -1201,6 +1285,11 @@
             lastRunShortcutAt: 0,
             lastRunPromptSig: '',
             lastRunPromptApproveAt: 0,
+            lastRecoveryActionAt: 0,
+            lastRecoveryKind: '',
+            lastRecoverySignature: '',
+            recoveryActionLockUntil: 0,
+            lastExecutorBusyAt: 0,
             lastExpandClickAt: 0,
             lastPermissionClickAt: 0,
             lastPermissionX: 0,
@@ -1243,11 +1332,18 @@
         state.sessionID++;
         state.mode = 'simple';
         state.ide = (config.ide || 'vscode').toLowerCase();
+            state.enableAccept = config.enableAccept === true;
+            state.enableRetry = config.enableRetry === true;
         state.bannedCommands = config.bannedCommands || [];
         state.tabNames = [];
         state.lastRunShortcutAt = 0;
         state.lastRunPromptSig = '';
         state.lastRunPromptApproveAt = 0;
+        state.lastRecoveryActionAt = 0;
+        state.lastRecoveryKind = '';
+        state.lastRecoverySignature = '';
+        state.recoveryActionLockUntil = 0;
+        state.lastExecutorBusyAt = 0;
         state.lastExpandClickAt = 0;
         state.lastPermissionClickAt = 0;
         state.lastPermissionX = 0;
@@ -1313,6 +1409,8 @@
     window.__autoAcceptStop = function() {
         const state = window.__autoAcceptFreeState;
         state.isRunning = false;
+        state.enableAccept = false;
+        state.enableRetry = false;
 
         if (state.clickInterval) {
             clearInterval(state.clickInterval);

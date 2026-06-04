@@ -8,21 +8,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import * as http from 'http';
-import initSqlJs, { Database } from 'sql.js';
 import { LanguageServerClient } from './language-server-client';
+import { readJsonFieldsDirect, readBase64ValueDirect, invalidateBufferCache } from './direct-db-reader';
 
 const TOKEN_PREFIX = 'rerevolve.token.';
 const STATE_KEY = 'jetskiStateSync.agentManagerInitState';
-
-// sql.js 초기화 캐시
-let sqlJsPromise: ReturnType<typeof initSqlJs> | null = null;
-
-async function getSqlJs(): Promise<Awaited<ReturnType<typeof initSqlJs>>> {
-    if (!sqlJsPromise) {
-        sqlJsPromise = initSqlJs();
-    }
-    return sqlJsPromise;
-}
 
 // Antigravity OAuth 클라이언트 자격증명
 // 우선순위: ~/.rerevolve/credentials.json > 임베디드 기본값 > 환경변수
@@ -50,7 +40,7 @@ try {
     ANTIGRAVITY_CLIENT_SECRET = EMBEDDED_CLIENT_SECRET;
 }
 
-interface StoredCredential {
+export interface StoredCredential {
     accessToken: string;
     refreshToken?: string;
     expiresAt: number;
@@ -63,8 +53,8 @@ export class TokenService {
     private tokenExpiry: Date | null = null;
     private lsClient: LanguageServerClient;
 
-    constructor(private globalState: vscode.Memento) {
-        this.lsClient = new LanguageServerClient();
+    constructor(private globalState: vscode.Memento, lsClient?: LanguageServerClient) {
+        this.lsClient = lsClient || new LanguageServerClient();
         this.migrateFromDebugFiles();
     }
 
@@ -134,42 +124,14 @@ export class TokenService {
      */
     private async getAuthStatus(): Promise<{ email?: string; apiKey?: string } | null> {
         const dbPath = this.getStateDbPath();
-        if (!fs.existsSync(dbPath)) {
-            return null;
-        }
-
         try {
-            const SQL = await getSqlJs();
-            const fileBuffer = fs.readFileSync(dbPath);
-            let db: Database | null = null;
-
-            try {
-                db = new SQL.Database(fileBuffer);
-                const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
-                stmt.bind(['antigravityAuthStatus']);
-
-                if (stmt.step()) {
-                    const row = stmt.get();
-                    stmt.free();
-                    if (row && row[0]) {
-                        const json = JSON.parse(String(row[0]));
-                        return {
-                            email: json.email,
-                            apiKey: json.apiKey
-                        };
-                    }
-                } else {
-                    stmt.free();
-                }
-            } finally {
-                if (db) {
-                    db.close();
-                }
+            const fields = readJsonFieldsDirect(dbPath, 'antigravityAuthStatus', ['email', 'apiKey']);
+            if (fields && (fields.email || fields.apiKey)) {
+                return { email: fields.email, apiKey: fields.apiKey };
             }
         } catch (err) {
-            console.error('ReRevolve: Failed to read authStatus', err);
+            console.error('ReRevolve: Failed to read authStatus (direct)', err);
         }
-
         return null;
     }
 
@@ -179,49 +141,23 @@ export class TokenService {
      */
     private async getRefreshToken(): Promise<string | null> {
         const dbPath = this.getStateDbPath();
-        if (!fs.existsSync(dbPath)) {
-            return null;
-        }
-
         try {
-            const SQL = await getSqlJs();
-            const fileBuffer = fs.readFileSync(dbPath);
-            let db: Database | null = null;
+            const base64Value = readBase64ValueDirect(dbPath, 'antigravityUnifiedStateSync.oauthToken');
+            if (!base64Value) return null;
 
-            try {
-                db = new SQL.Database(fileBuffer);
-                const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
-                stmt.bind(['antigravityUnifiedStateSync.oauthToken']);
-
-                if (stmt.step()) {
-                    const row = stmt.get();
-                    stmt.free();
-                    if (row && row[0]) {
-                        const base64Value = String(row[0]).trim();
-                        const raw = Buffer.from(base64Value, 'base64');
-                        
-                        // Protobuf에서 refresh token 추출 (field 3)
-                        const oauthField = this.findField(raw, 1); // oauthTokenInfo는 field 1
-                        if (oauthField) {
-                            const tokenInfo = this.parseOAuthTokenInfo(oauthField);
-                            if (tokenInfo.refreshToken) {
-                                console.log(`ReRevolve: Refresh token from oauthToken: ${tokenInfo.refreshToken.substring(0, 15)}...`);
-                                return tokenInfo.refreshToken;
-                            }
-                        }
-                    }
-                } else {
-                    stmt.free();
-                }
-            } finally {
-                if (db) {
-                    db.close();
+            const raw = Buffer.from(base64Value.trim(), 'base64');
+            // Protobuf에서 refresh token 추출 (field 1 → oauthTokenInfo)
+            const oauthField = this.findField(raw, 1);
+            if (oauthField) {
+                const tokenInfo = this.parseOAuthTokenInfo(oauthField);
+                if (tokenInfo.refreshToken) {
+                    console.log(`ReRevolve: Refresh token from oauthToken (direct): ${tokenInfo.refreshToken.substring(0, 15)}...`);
+                    return tokenInfo.refreshToken;
                 }
             }
         } catch (err) {
-            console.error('ReRevolve: Failed to read refresh token', err);
+            console.error('ReRevolve: Failed to read refresh token (direct)', err);
         }
-
         return null;
     }
 
@@ -232,42 +168,14 @@ export class TokenService {
      */
     private async readStateValue(): Promise<string | null> {
         const dbPath = this.getStateDbPath();
-        if (!fs.existsSync(dbPath)) {
-            console.log('ReRevolve: state.vscdb not found');
-            return null;
-        }
-
         try {
-            const SQL = await getSqlJs();
-            const fileBuffer = fs.readFileSync(dbPath);
-            let db: Database | null = null;
-
-            try {
-                db = new SQL.Database(fileBuffer);
-                const stmt = db.prepare('SELECT value FROM ItemTable WHERE key = ?');
-                stmt.bind([STATE_KEY]);
-
-                if (stmt.step()) {
-                    const row = stmt.get();
-                    stmt.free();
-                    if (row && row[0]) {
-                        const value = String(row[0]).trim();
-                        if (value.length > 0) {
-                            return value;
-                        }
-                    }
-                } else {
-                    stmt.free();
-                }
-            } finally {
-                if (db) {
-                    db.close();
-                }
+            const value = readBase64ValueDirect(dbPath, STATE_KEY);
+            if (value && value.length > 0) {
+                return value;
             }
         } catch (err) {
-            console.error('ReRevolve: Failed to read state.vscdb', err);
+            console.error('ReRevolve: Failed to read state.vscdb (direct)', err);
         }
-
         return null;
     }
 
@@ -494,26 +402,14 @@ export class TokenService {
 
     /**
      * 현재 Antigravity에 로그인된 이메일 추출
-     * 4단계 전략:
-     *  0. antigravity_auth 세션 — VS Code Authentication Provider API (즉시, 100% 정확)
-     *  1. getEmailQuick() — 캐시된 서버 정보로 HTTP만 호출 (PowerShell 없음, ~50ms)
-     *  2. getCurrentEmail() — 서버 재감지 포함 full detect (~3-5초)  
-     *  3. vscdb fallback — state.vscdb 파일 파싱
+     * 4단계 전략 (정확도 순):
+     *  0. getEmailQuick() — 캐시된 LS 서버 정보로 HTTP만 호출 (~50ms)
+     *  1. getCurrentEmail() — 서버 재감지 포함 full detect (~3-5초)
+     *  2. vscdb SQL — antigravityAuthStatus.email 직접 쿼리 (레거시/스냅샷 fallback)
+     *  3. antigravity_auth 세션 — Provider가 stale일 수 있어 최후 fallback
      */
-    async getCurrentLoggedInEmail(): Promise<string | null> {
-        // 0단계: antigravity_auth 세션 (Settings Account 탭과 동일 소스)
-        try {
-            const session = await vscode.authentication.getSession('antigravity_auth', [], { silent: true });
-            if (session?.account?.label) {
-                const authEmail = session.account.label.toLowerCase();
-                console.log(`ReRevolve: Auth provider - email: ${authEmail}`);
-                return authEmail;
-            }
-        } catch {
-            // Provider 미등록 시 무시 — 다음 단계로
-        }
-
-        // 1단계: 경량 HTTP 조회 (LS 서버 캐시 있으면 즉시 응답)
+    async getCurrentLoggedInEmail(expectedEmail?: string): Promise<string | null> {
+        // 0단계: 경량 HTTP 조회 (LS 서버 캐시 있으면 즉시 응답)
         try {
             const quickEmail = await this.lsClient.getEmailQuick();
             if (quickEmail) {
@@ -521,10 +417,10 @@ export class TokenService {
                 return quickEmail;
             }
         } catch {
-            // 무시 — 2단계로
+            // 무시 — 1단계로
         }
 
-        // 2단계: Full LS detect (PowerShell 포함, 서버 재감지)
+        // 1단계: Full LS detect (PowerShell 포함, 서버 재감지)
         try {
             const email = await this.lsClient.getCurrentEmail();
             if (email) {
@@ -532,88 +428,97 @@ export class TokenService {
                 return email;
             }
         } catch {
-            console.log('ReRevolve: Language Server not available, falling back to vscdb');
+            console.log('ReRevolve: Language Server not available');
         }
 
-        // 3단계: vscdb fallback
-        return this.getCurrentLoggedInEmailFromVscdb();
-    }
-
-    /**
-     * state.vscdb에서 로그인된 이메일 추출 (fallback)
-     */
-    private async getCurrentLoggedInEmailFromVscdb(): Promise<string | null> {
-        const dbPath = this.getStateDbPath();
-        
-        if (!fs.existsSync(dbPath)) {
-            return null;
-        }
-
+        // 2단계: vscdb SQL 직접 쿼리 (계정 전환 스냅샷/구버전 fallback)
         try {
-            const fileBuffer = fs.readFileSync(dbPath);
-            const content = fileBuffer.toString('utf8');
-
-            // 1. tfa.lastUserInfo에서 email 찾기 (가장 정확 - 현재 활성 사용자)
-            const lastUserInfoIndex = content.indexOf('tfa.lastUserInfo');
-            if (lastUserInfoIndex !== -1) {
-                const searchRange = content.substring(lastUserInfoIndex, lastUserInfoIndex + 500);
-                const emailMatch = searchRange.match(/"email"\s*:\s*"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"/);
-                if (emailMatch && emailMatch[1]) {
-                    const email = emailMatch[1].toLowerCase();
-                    console.log(`ReRevolve: Current logged in email (from tfa.lastUserInfo): ${email}`);
-                    return email;
-                }
+            const vscdbEmail = await this.getCurrentLoggedInEmailFromVscdb();
+            if (vscdbEmail) {
+                return vscdbEmail;
             }
+        } catch {
+            // vscdb 실패 → 다음 단계로
+        }
 
-            // 2. antigravityAuthStatus 키 값에서 email 찾기 (대안)
-            const authStatusIndex = content.indexOf('antigravityAuthStatus');
-            if (authStatusIndex !== -1) {
-                const searchRange = content.substring(authStatusIndex, authStatusIndex + 2000);
-                const emailMatch = searchRange.match(/"email"\s*:\s*"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"/);
-                if (emailMatch && emailMatch[1]) {
-                    const email = emailMatch[1].toLowerCase();
-                    console.log(`ReRevolve: Current logged in email (from antigravityAuthStatus): ${email}`);
-                    return email;
-                }
-            }
-
-            // 3. tierDescription:"Google AI Pro" 근처에서 email 찾기
-            const tierProIndex = content.indexOf('"tierDescription":"Google AI Pro"');
-            if (tierProIndex !== -1) {
-                // 앞쪽 200바이트에서 email 찾기
-                const searchStart = Math.max(0, tierProIndex - 200);
-                const searchRange = content.substring(searchStart, tierProIndex + 100);
-                const emailMatch = searchRange.match(/"email"\s*:\s*"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"/);
-                if (emailMatch && emailMatch[1]) {
-                    const email = emailMatch[1].toLowerCase();
-                    console.log(`ReRevolve: Current logged in email (from tierDescription): ${email}`);
-                    return email;
-                }
-            }
-
-            // 4. 최후의 대안: 일반 email 패턴 (파일 끝 쪽 우선)
-            const emailRegex = /"email"\s*:\s*"([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})"/g;
-            const foundEmails: { index: number; email: string }[] = [];
-            let match;
-
-            while ((match = emailRegex.exec(content)) !== null) {
-                const email = match[1].toLowerCase();
-                // rerevolve 관련 키는 제외
-                if (!email.includes('rerevolve') && !email.includes('token.')) {
-                    foundEmails.push({ index: match.index, email });
+        // 3단계: antigravity_auth 세션 (1.23+에서 VS Code/Copilot 계정처럼 stale일 수 있어 최후 fallback)
+        try {
+            const sessions = await vscode.authentication.getSession('antigravity_auth', [], { silent: true }).catch(() => null);
+            // 만약 getSession이 실패하거나 scope 문제로 못가져올 경우 대비하여 getSessions(전체 조회) 사용
+            const allSessions = await vscode.authentication.getSessions('antigravity_auth');
+            
+            const sessionCandidates = sessions ? [sessions, ...allSessions] : allSessions;
+            const foundEmails: string[] = [];
+            
+            for (const session of sessionCandidates) {
+                if (session?.account) {
+                    const candidates = [session.account.label, session.account.id].filter(Boolean);
+                    const emailCandidate = candidates.find(c => c.includes('@'));
+                    if (emailCandidate) {
+                        const authEmail = emailCandidate.toLowerCase();
+                        if (!foundEmails.includes(authEmail)) {
+                            foundEmails.push(authEmail);
+                        }
+                    } else if (session.accessToken) {
+                        // label/id에 이메일이 없으면 accessToken으로 Google userinfo API 호출
+                        try {
+                            const response = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+                                headers: { 'Authorization': `Bearer ${session.accessToken}` }
+                            });
+                            if (response.ok) {
+                                const userInfo = await response.json() as { email?: string };
+                                if (userInfo.email) {
+                                    const authEmail = userInfo.email.toLowerCase();
+                                    if (!foundEmails.includes(authEmail)) {
+                                        foundEmails.push(authEmail);
+                                    }
+                                }
+                            }
+                        } catch { /* userinfo API 실패 */ }
+                    }
                 }
             }
 
             if (foundEmails.length > 0) {
-                // 가장 마지막(최신) 이메일 사용
-                foundEmails.sort((a, b) => a.index - b.index);
-                const lastEmail = foundEmails[foundEmails.length - 1];
-                console.log(`ReRevolve: Current logged in email (fallback): ${lastEmail.email}`);
-                return lastEmail.email;
+                if (expectedEmail && foundEmails.includes(expectedEmail.toLowerCase())) {
+                    console.log(`ReRevolve: Auth provider - matched expected email: ${expectedEmail.toLowerCase()}`);
+                    return expectedEmail.toLowerCase();
+                }
+                console.log(`ReRevolve: Auth provider - returning first email: ${foundEmails[0]}`);
+                return foundEmails[0];
+            }
+        } catch (e) {
+            console.log('ReRevolve: Auth provider error:', e);
+        }
+
+        return null;
+    }
+
+    /**
+     * state.vscdb에서 로그인된 이메일 추출 (SQL 쿼리 방식)
+     */
+    private async getCurrentLoggedInEmailFromVscdb(): Promise<string | null> {
+        const dbPath = this.getStateDbPath();
+        if (!fs.existsSync(dbPath)) return null;
+
+        try {
+            // 1. antigravityAuthStatus에서 email 필드 직접 추출 (가장 정확)
+            const authFields = readJsonFieldsDirect(dbPath, 'antigravityAuthStatus', ['email']);
+            if (authFields?.email && authFields.email.includes('@')) {
+                const email = authFields.email.toLowerCase();
+                console.log(`ReRevolve: Current logged in email (from antigravityAuthStatus direct): ${email}`);
+                return email;
             }
 
+            // 2. tfa.lastUserInfo에서 email 추출
+            const tfaFields = readJsonFieldsDirect(dbPath, 'tfa.lastUserInfo', ['email']);
+            if (tfaFields?.email && tfaFields.email.includes('@')) {
+                const email = tfaFields.email.toLowerCase();
+                console.log(`ReRevolve: Current logged in email (from tfa.lastUserInfo direct): ${email}`);
+                return email;
+            }
         } catch (err) {
-            console.error('ReRevolve: Email extraction failed', err);
+            console.error('ReRevolve: Direct email extraction failed', err);
         }
 
         return null;
@@ -799,6 +704,39 @@ export class TokenService {
             if (typeof stored === 'string' && stored.length > 10) {
                 return stored;
             }
+            return null;
+        }
+    }
+
+    /**
+     * 계정 전환용 credential 조회.
+     * refresh token이 있으면 전환 직전에 access token을 새로 발급하여 Antigravity 상태에 넣을 수 있게 한다.
+     */
+    async getCredentialForSwitch(email: string): Promise<StoredCredential | null> {
+        const normalizedEmail = email.toLowerCase();
+        const stored = this.globalState.get<string>(TOKEN_PREFIX + normalizedEmail);
+
+        if (!stored) {
+            return null;
+        }
+
+        try {
+            const credential: StoredCredential = JSON.parse(stored);
+            credential.email = (credential.email || normalizedEmail).toLowerCase();
+
+            if (!credential.refreshToken) {
+                return credential.accessToken ? credential : null;
+            }
+
+            const refreshed = await this.refreshAccessToken(credential);
+            if (refreshed) {
+                credential.accessToken = refreshed.accessToken;
+                credential.expiresAt = refreshed.expiresAt;
+                await this.globalState.update(TOKEN_PREFIX + normalizedEmail, JSON.stringify(credential));
+            }
+
+            return credential.accessToken ? credential : null;
+        } catch {
             return null;
         }
     }

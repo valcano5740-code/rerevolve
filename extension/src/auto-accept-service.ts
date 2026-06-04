@@ -36,11 +36,14 @@ const ACCEPT_COMMANDS = [
 
 // 세션 동기화용 Configuration 키
 const CONFIG_KEY = 'rerevolve.autoAcceptEnabled';
+const RETRY_CONFIG_KEY = 'rerevolve.autoRetryEnabled';
 const STATE_KEY = 'autoAcceptEnabled';
+const RETRY_STATE_KEY = 'autoRetryEnabled';
 const POLL_INTERVAL = 5000;
 
 export class AutoAcceptService implements vscode.Disposable {
     private _enabled = false;
+    private _retryEnabled = false;
     private pollTimer: NodeJS.Timeout | null = null;
     private globalState: vscode.Memento;
     private cdpHandler: CDPHandler;
@@ -48,7 +51,7 @@ export class AutoAcceptService implements vscode.Disposable {
     private configChangeDisposable: vscode.Disposable | null = null;
 
     // 상태 변경 이벤트
-    private readonly _onStatusChange = new vscode.EventEmitter<{ enabled: boolean; cdp: boolean }>();
+    private readonly _onStatusChange = new vscode.EventEmitter<{ enabled: boolean; retryEnabled: boolean; cdp: boolean }>();
     public readonly onStatusChange = this._onStatusChange.event;
 
     constructor(globalState: vscode.Memento) {
@@ -67,6 +70,16 @@ export class AutoAcceptService implements vscode.Disposable {
                     this.stop(true); // 동기화에 의한 중지
                 }
             }
+            if (e.affectsConfiguration('rerevolve.autoRetryEnabled')) {
+                const config = vscode.workspace.getConfiguration('rerevolve');
+                const shouldBeEnabled = config.get<boolean>('autoRetryEnabled', false);
+
+                if (shouldBeEnabled && !this._retryEnabled) {
+                    this.startRetry(true);
+                } else if (!shouldBeEnabled && this._retryEnabled) {
+                    this.stopRetry(true);
+                }
+            }
         });
     }
 
@@ -76,6 +89,14 @@ export class AutoAcceptService implements vscode.Disposable {
 
     get isCDPConnected(): boolean {
         return this.cdpConnected;
+    }
+
+    get isAutoRetryEnabled(): boolean {
+        return this._retryEnabled;
+    }
+
+    private get shouldRunAutomation(): boolean {
+        return this._enabled || this._retryEnabled;
     }
 
     /**
@@ -96,20 +117,9 @@ export class AutoAcceptService implements vscode.Disposable {
         // globalState에도 백업
         this.globalState.update(STATE_KEY, true);
 
+        this.ensureAutomationLoop();
 
-        // Auto-Run 패치
-        this.applyAutoRunPatch();
-
-        // CDP 연결 시도 (non-blocking)
-        this.startCDP();
-
-        // 비차단 폴링 시작 (CDP와 병행)
-        this.pollTimer = setInterval(() => {
-            if (!this._enabled) return;
-            this.poll();
-        }, POLL_INTERVAL);
-
-        this._onStatusChange.fire({ enabled: true, cdp: this.cdpConnected });
+        this._onStatusChange.fire({ enabled: true, retryEnabled: this._retryEnabled, cdp: this.cdpConnected });
         console.log(`ReRevolve: Auto-Accept ON (${POLL_INTERVAL}ms, CDP ${this.cdpConnected ? 'ON' : 'pending'})`);
     }
 
@@ -130,18 +140,9 @@ export class AutoAcceptService implements vscode.Disposable {
 
         this.globalState.update(STATE_KEY, false);
 
-        if (this.pollTimer) {
-            clearInterval(this.pollTimer);
-            this.pollTimer = null;
-        }
+        await this.stopAutomationIfIdle();
 
-        // CDP 중지
-        if (this.cdpConnected) {
-            await this.cdpHandler.stop();
-            this.cdpConnected = false;
-        }
-
-        this._onStatusChange.fire({ enabled: false, cdp: false });
+        this._onStatusChange.fire({ enabled: false, retryEnabled: this._retryEnabled, cdp: this.cdpConnected });
         console.log('ReRevolve: Auto-Accept OFF (설정 원복 완료)');
     }
 
@@ -153,13 +154,64 @@ export class AutoAcceptService implements vscode.Disposable {
             await this.stop();
             vscode.window.showInformationMessage('🛑 Auto-Accept OFF (설정 원복됨)');
         } else {
-            // CDP 설정 확인 (첫 실행 시)
-            await CdpSetupService.ensureSetup(this.globalState);
+            // CDP 설정 확인 (첫 실행 시) — 거부하면 ON하지 않음
+            const cdpReady = await CdpSetupService.ensureSetup(this.globalState);
+            if (!cdpReady) {
+                vscode.window.showWarningMessage('⚠️ CDP 설정을 건너뛰어 Auto-Accept를 켤 수 없습니다. 다시 시도하려면 토글을 누르세요.');
+                return false;
+            }
             await this.start();
             const cdpStatus = this.cdpConnected ? ' (CDP 연결)' : '';
             vscode.window.showInformationMessage(`🚀 Auto-Accept ON${cdpStatus}`);
         }
         return this._enabled;
+    }
+
+    async startRetry(fromSync = false): Promise<void> {
+        if (this._retryEnabled) return;
+
+        this._retryEnabled = true;
+        if (!fromSync) {
+            const config = vscode.workspace.getConfiguration('rerevolve');
+            config.update('autoRetryEnabled', true, vscode.ConfigurationTarget.Global)
+                .then(() => {}, () => {});
+        }
+        this.globalState.update(RETRY_STATE_KEY, true);
+        this.ensureAutomationLoop();
+        this._onStatusChange.fire({ enabled: this._enabled, retryEnabled: true, cdp: this.cdpConnected });
+        console.log(`ReRevolve: Auto-Retry ON (${POLL_INTERVAL}ms, CDP ${this.cdpConnected ? 'ON' : 'pending'})`);
+    }
+
+    async stopRetry(fromSync = false): Promise<void> {
+        if (!this._retryEnabled) return;
+
+        this._retryEnabled = false;
+        if (!fromSync) {
+            const config = vscode.workspace.getConfiguration('rerevolve');
+            config.update('autoRetryEnabled', false, vscode.ConfigurationTarget.Global)
+                .then(() => {}, () => {});
+        }
+        this.globalState.update(RETRY_STATE_KEY, false);
+        await this.stopAutomationIfIdle();
+        this._onStatusChange.fire({ enabled: this._enabled, retryEnabled: false, cdp: this.cdpConnected });
+        console.log('ReRevolve: Auto-Retry OFF');
+    }
+
+    async toggleRetry(): Promise<boolean> {
+        if (this._retryEnabled) {
+            await this.stopRetry();
+            vscode.window.showInformationMessage('🛑 Auto-Retry OFF');
+        } else {
+            const cdpReady = await CdpSetupService.ensureSetup(this.globalState);
+            if (!cdpReady) {
+                vscode.window.showWarningMessage('⚠️ CDP 설정을 건너뛰어 Auto-Retry를 켤 수 없습니다. 다시 시도하려면 토글을 누르세요.');
+                return false;
+            }
+            await this.startRetry();
+            const cdpStatus = this.cdpConnected ? ' (CDP 연결)' : '';
+            vscode.window.showInformationMessage(`🔁 Auto-Retry ON${cdpStatus}`);
+        }
+        return this._retryEnabled;
     }
 
     /**
@@ -169,10 +221,15 @@ export class AutoAcceptService implements vscode.Disposable {
         // Configuration 우선, globalState 폴백
         const config = vscode.workspace.getConfiguration('rerevolve');
         const configEnabled = config.get<boolean>('autoAcceptEnabled', false);
+        const configRetryEnabled = config.get<boolean>('autoRetryEnabled', false);
         const stateEnabled = this.globalState.get<boolean>(STATE_KEY, false);
+        const stateRetryEnabled = this.globalState.get<boolean>(RETRY_STATE_KEY, false);
 
         if (configEnabled || stateEnabled) {
             this.start(configEnabled); // config에서 온 경우 동기화 재기록 방지
+        }
+        if (configRetryEnabled || stateRetryEnabled) {
+            this.startRetry(configRetryEnabled);
         }
     }
 
@@ -197,7 +254,7 @@ export class AutoAcceptService implements vscode.Disposable {
             const available = await this.cdpHandler.isCDPAvailable();
             if (available) {
                 this.cdpConnected = true;
-                this._onStatusChange.fire({ enabled: true, cdp: true });
+                this._onStatusChange.fire({ enabled: this._enabled, retryEnabled: this._retryEnabled, cdp: true });
                 console.log('ReRevolve: CDP 연결 성공 (상태 비저장 감시 프로세스 활성화)');
             } else {
                 this.cdpConnected = false;
@@ -209,20 +266,45 @@ export class AutoAcceptService implements vscode.Disposable {
         }
     }
 
-    // ===== 비차단 폴링 =====
+    // ===== CDP 폴링 (AAA v13 패턴) =====
+    // 버튼 클릭은 CDP 주입 스크립트가 처리 (VS Code 명령어 사용하지 않음)
+    // 폴링은 CDP 연결 유지 + 새 페이지 감지 목적으로만 사용
     private poll(): void {
-        for (const cmd of ACCEPT_COMMANDS) {
-            vscode.commands.executeCommand(cmd).then(
-                () => { },
-                () => { }
-            );
+        if (this.cdpConnected && this.shouldRunAutomation) {
+            this.cdpHandler.start({
+                ide: 'antigravity',
+                pollInterval: 1000,
+                enableAccept: this._enabled,
+                enableRetry: this._retryEnabled
+            }).catch(() => {});
+        }
+    }
+
+    private ensureAutomationLoop(): void {
+        this.applyAutoRunPatch();
+        this.startCDP();
+        if (!this.pollTimer) {
+            this.pollTimer = setInterval(() => {
+                if (!this.shouldRunAutomation) return;
+                this.poll();
+            }, POLL_INTERVAL);
+        }
+    }
+
+    private async stopAutomationIfIdle(): Promise<void> {
+        if (this.shouldRunAutomation) {
+            this.poll();
+            return;
         }
 
-        // 다중 창 환경(단일 프로세스 공유) 대응:
-        // 백그라운드 웹소켓을 계속 열어두면 연결 탈취(Steal)로 구멍이 발생하므로,
-        // Stateless 구조로 700ms마다 실행여부 점검 및 부족한 창에 명령 보강 주입
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
+
         if (this.cdpConnected) {
-            this.cdpHandler.start({ ide: 'antigravity', pollInterval: 1000 }).catch(() => {});
+            await this.cdpHandler.stop();
+            this.cdpConnected = false;
         }
     }
 

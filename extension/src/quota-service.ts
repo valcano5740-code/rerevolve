@@ -8,6 +8,7 @@
  */
 
 import * as http from 'http';
+import * as https from 'https';
 import { LanguageServerClient } from './language-server-client';
 
 export interface ModelQuota {
@@ -15,6 +16,7 @@ export interface ModelQuota {
     model: string;
     remainingPercentage: number;
     resetTime: string | null;
+    isCreditOverage?: boolean;
 }
 
 export interface QuotaResult {
@@ -25,6 +27,7 @@ export interface QuotaResult {
     claudeResetTimeRaw: string | null;  // 원본 ISO 시간 (실시간 비교용)
     geminiProRemaining: number;
     geminiFlashRemaining: number;
+    isCreditOverage?: boolean;
     models: ModelQuota[];
     lastUpdated: Date;
     error?: string;
@@ -33,7 +36,7 @@ export interface QuotaResult {
 // 그룹 정의
 const GROUPS = {
     'Claude/GPT': ['claude', 'gpt'],
-    'Gemini Pro': ['gemini-3-pro', 'gemini-2.5-pro'],
+    'Gemini Pro': ['gemini-3-pro', 'gemini-2.5-pro', 'gemini-pro', '3.1-pro', '3-pro', 'gemini_3_pro', 'gemini_pro', 'pro'],
     'Gemini Flash': ['flash']
 };
 
@@ -68,7 +71,8 @@ export class QuotaService {
                 cachedLsPort,
                 cachedLsCsrf,
                 '/exa.language_server_pb.LanguageServerService/GetUserStatus',
-                { metadata: { ideName: 'antigravity', extensionName: 'antigravity', locale: 'en' } }
+                { metadata: { ideName: 'antigravity', extensionName: 'antigravity', locale: 'en' } },
+                (serverInfo as any).protocol || 'http'
             );
             return this.parseLocalResponse(email, data);
         } catch (err) {
@@ -182,6 +186,67 @@ export class QuotaService {
         };
     }
 
+    private isQuotaGroupModel(model: string, displayName: string): boolean {
+        const text = `${model} ${displayName}`.toLowerCase();
+        return Object.values(GROUPS).some(keywords => keywords.some(keyword => text.includes(keyword)));
+    }
+
+    private extractResetTime(model: any): string | null {
+        return model?.quotaInfo?.resetTime
+            || model?.resetTime
+            || model?.quotaResetTime
+            || model?.resetTimeRaw
+            || null;
+    }
+
+    private hasCreditOverageMarker(model: any): boolean {
+        try {
+            const text = JSON.stringify(model).toLowerCase();
+            return text.includes('overage')
+                || text.includes('ai credit')
+                || text.includes('ai_credit')
+                || text.includes('credits')
+                || text.includes('quota exceeded')
+                || text.includes('quota_exceeded')
+                || text.includes('warning');
+        } catch {
+            return false;
+        }
+    }
+
+    private parseModelQuota(model: any, displayName: string, modelKey: string, isPaidAccount: boolean): ModelQuota {
+        const resetTime = this.extractResetTime(model);
+        const quotaInfo = model?.quotaInfo;
+        const rawRemaining = quotaInfo?.remainingFraction;
+        const isTrackedQuotaModel = this.isQuotaGroupModel(modelKey, displayName);
+        const hasOverageSignal = this.hasCreditOverageMarker(model);
+        const isCreditOverage = isPaidAccount && isTrackedQuotaModel && (
+            hasOverageSignal
+            || (!quotaInfo && !!resetTime)
+            || (!quotaInfo && /claude|gpt/i.test(`${modelKey} ${displayName}`))
+            || (quotaInfo && typeof rawRemaining !== 'number' && !!resetTime)
+        );
+
+        let remainingPercentage: number;
+        if (typeof rawRemaining === 'number') {
+            remainingPercentage = Math.max(0, Math.min(100, Math.round(rawRemaining * 100)));
+        } else if (isCreditOverage) {
+            remainingPercentage = 0;
+        } else if (!quotaInfo) {
+            remainingPercentage = 100;
+        } else {
+            remainingPercentage = 0;
+        }
+
+        return {
+            displayName,
+            model: modelKey,
+            remainingPercentage,
+            resetTime,
+            isCreditOverage
+        };
+    }
+
     private parseQuotaResponse(email: string, data: any, isPaidAccount: boolean): QuotaResult {
         const models: ModelQuota[] = [];
 
@@ -198,20 +263,7 @@ export class QuotaService {
         if (data.models) {
             for (const [key, model] of Object.entries(data.models) as any) {
                 const displayName = model.displayName || key;
-                let remaining = 0;
-                if (model.quotaInfo) {
-                    remaining = typeof model.quotaInfo.remainingFraction === 'number'
-                        ? Math.round(model.quotaInfo.remainingFraction * 100)
-                        : 0;
-                }
-                const resetTime = model.quotaInfo?.resetTime || null;
-
-                models.push({
-                    displayName,
-                    model: model.model || key,
-                    remainingPercentage: remaining,
-                    resetTime
-                });
+                models.push(this.parseModelQuota(model, displayName, model.model || key, isPaidAccount));
             }
         }
 
@@ -243,13 +295,14 @@ export class QuotaService {
             claudeResetTimeRaw: claudeResetTime,  // 원본 ISO 시간 보관
             geminiProRemaining: groupStats['Gemini Pro']?.min ?? 100,
             geminiFlashRemaining: groupStats['Gemini Flash']?.min ?? 100,
+            isCreditOverage: groupStats['Claude/GPT']?.creditOverage ?? false,
             models,
             lastUpdated: new Date()
         };
     }
 
-    private calculateGroupStats(models: ModelQuota[]): Record<string, { min: number; reset: string | null }> {
-        const stats: Record<string, { min: number; reset: string | null }> = {};
+    private calculateGroupStats(models: ModelQuota[]): Record<string, { min: number; reset: string | null; creditOverage: boolean }> {
+        const stats: Record<string, { min: number; reset: string | null; creditOverage: boolean }> = {};
 
         for (const [groupName, keywords] of Object.entries(GROUPS)) {
             const groupModels = models.filter(m =>
@@ -265,7 +318,8 @@ export class QuotaService {
                 );
                 stats[groupName] = {
                     min: lowest.remainingPercentage,
-                    reset: lowest.resetTime
+                    reset: lowest.resetTime,
+                    creditOverage: groupModels.some(model => model.isCreditOverage)
                 };
             }
         }
@@ -320,14 +374,22 @@ export class QuotaService {
         const planStatus = userStatus?.planStatus;
         const isPaidAccount = !!(planStatus?.planInfo?.monthlyPromptCredits > 0);
 
+        // 전체 raw 모델 목록 디버그 출력 (실제 key 파악용)
+        console.log('ReRevolve: rawModels count=' + rawModels.length);
         for (const m of rawModels) {
-            if (!m.quotaInfo) continue;
-            models.push({
-                displayName: m.label || 'Unknown',
-                model: m.modelOrAlias?.model || 'unknown',
-                remainingPercentage: Math.round((m.quotaInfo.remainingFraction ?? 0) * 100),
-                resetTime: m.quotaInfo.resetTime || null
-            });
+            const modelKey = m.modelOrAlias?.model || m.modelOrAlias?.alias || JSON.stringify(m.modelOrAlias);
+            const label = m.label || '(no label)';
+            const hasQuota = !!m.quotaInfo;
+            const remaining = hasQuota ? (m.quotaInfo.remainingFraction ?? 'null') : 'NO_QUOTA';
+            const resetTime = this.extractResetTime(m) || 'NO_RESET';
+            console.log('ReRevolve:   model=' + modelKey + ' label=' + label + ' remaining=' + remaining);
+            console.log('ReRevolve:     resetTime=' + resetTime + ' creditMarker=' + this.hasCreditOverageMarker(m));
+        }
+
+        for (const m of rawModels) {
+            const modelKey = m.modelOrAlias?.model || m.modelOrAlias?.alias || 'unknown';
+            const label = m.label || 'Unknown';
+            models.push(this.parseModelQuota(m, label, modelKey, isPaidAccount));
         }
 
         const groupStats = this.calculateGroupStats(models);
@@ -347,6 +409,8 @@ export class QuotaService {
         }
 
         console.log(`ReRevolve: [${email}] 로컬 LS 쿼터 조회 성공 (${models.length}개 모델)`);
+        console.log(`ReRevolve: [${email}] 모델 목록: ${models.map(m => `${m.displayName}(${m.model})=${m.remainingPercentage}%`).join(', ')}`);
+        console.log(`ReRevolve: [${email}] 그룹 통계: ${JSON.stringify(groupStats)}`);
 
         return {
             email,
@@ -356,6 +420,7 @@ export class QuotaService {
             claudeResetTimeRaw: claudeResetTime,
             geminiProRemaining: groupStats['Gemini Pro']?.min ?? 100,
             geminiFlashRemaining: groupStats['Gemini Flash']?.min ?? 100,
+            isCreditOverage: groupStats['Claude/GPT']?.creditOverage ?? false,
             models,
             lastUpdated: new Date()
         };
@@ -365,15 +430,17 @@ export class QuotaService {
     // findLsProcess, getListeningPorts, testLsPort 삭제
     // → LanguageServerClient.getCachedServerInfo()로 대체
 
-    private callLocalApi(port: number, csrf: string, path: string, body: object): Promise<any> {
+    private callLocalApi(port: number, csrf: string, path: string, body: object, protocol: 'http' | 'https' = 'http'): Promise<any> {
         return new Promise((resolve, reject) => {
             const payload = JSON.stringify(body);
-            const req = http.request(
+            const client = protocol === 'https' ? https : http;
+            const req = client.request(
                 {
                     hostname: '127.0.0.1',
                     port,
                     path,
                     method: 'POST',
+                    rejectUnauthorized: false,
                     headers: {
                         'Content-Type': 'application/json',
                         'Content-Length': Buffer.byteLength(payload),

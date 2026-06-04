@@ -125,6 +125,9 @@ antigravity.cascade.acceptSuggestedAction        - Cascade 제안 수락
 ### Current Understanding
 - [Verified] 엔드포인트: `https://web2.cursor.sh/auth/loadCodeAssist`
 - [Verified] 인증: Bearer Token (Access Token)
+- [Verified 2026-05-06] Antigravity 1.23/1.107 계열은 `language_server_windows_x64.exe` 명령줄에 `--agent_port`가 없고 `--extension_server_port`만 보일 수 있음. 실제 `GetUserStatus`는 프로세스의 Listen 포트 중 HTTPS/HTTP 서버에서 `/exa.language_server_pb.LanguageServerService/GetUserStatus`로 응답한다.
+- [Verified 2026-05-06] 현재 실환경에서는 `antigravityAuthStatus`가 `valcano0007@gmail.com`로 stale일 수 있었고, 실제 LS 응답은 `valcano0005@gmail.com`를 반환했다. 활성 계정 판정은 LS 응답을 `antigravity_auth`/vscdb보다 우선해야 한다.
+- [Verified 2026-05-06] 진짜 계정 전환에는 `antigravityAuthStatus`만으로 부족하다. 최소 `antigravityUnifiedStateSync.oauthToken`의 `oauthTokenInfoSentinelKey`까지 새 access/refresh token protobuf로 교체하고 Language Server를 재시작해야 한다.
 
 ---
 
